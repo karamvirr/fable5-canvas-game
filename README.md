@@ -4,11 +4,19 @@ Playing around with Anthropic's new Fable 5 to build **"Emberwood"**, a Zelda-li
 
 <img width="890" height="665" alt="Screenshot 2026-06-10 at 9 39 42 AM" src="https://github.com/user-attachments/assets/06a3e8c9-91fc-4db3-96b3-7ce5e02aa878" />
 
+*Spotted in the open: the "!" means a snortling has seen you and the hunt is on.*
+
 <img width="889" height="662" alt="Screenshot 2026-06-10 at 9 41 31 AM" src="https://github.com/user-attachments/assets/9f85a371-eb11-426f-bec3-e68c8c771287" />
+
+*When stealth fails: the sword sweeps a full arc with a slash trail, hit-stop, and knockback.*
 
 <img width="888" height="668" alt="Screenshot 2026-06-10 at 9 40 43 AM" src="https://github.com/user-attachments/assets/d7444b9b-9ddb-41d9-9919-71538c711fdb" />
 
+*One ember down, two to go. Each shard lights a socket on the sealed shrine door.*
+
 <img width="887" height="660" alt="Screenshot 2026-06-10 at 9 45 47 AM" src="https://github.com/user-attachments/assets/358e26b0-dab2-4f50-9e0c-e40ee48f42f4" />
+
+*Arrows are scavenged and scarce: an unaware target drops in one clean shot.*
 
 <img width="810" height="606" alt="Screenshot 2026-06-10 at 9 51 15 AM" src="https://github.com/user-attachments/assets/eaf33b53-fb4d-40db-ab6b-9aaa55edf457" />
 
