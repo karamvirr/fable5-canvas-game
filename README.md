@@ -12,7 +12,11 @@ Playing around with Anthropic's new Fable 5 to build **"Emberwood"**, a Zelda-li
 
 <img width="810" height="606" alt="Screenshot 2026-06-10 at 9 51 15 AM" src="https://github.com/user-attachments/assets/eaf33b53-fb4d-40db-ab6b-9aaa55edf457" />
 
+*Press V to see what the AI sees: vision cones clipped by trees and cover. Yellow is unaware, red is hunting.*
+
 <img width="810" height="605" alt="Screenshot 2026-06-10 at 9 51 41 AM" src="https://github.com/user-attachments/assets/fde4f291-9bdc-40a4-b39b-d5facec2d8b4" />
+
+*Spotted from across the river: no way through, so the hunter plots an A\* route over the bridge to reach you.*
 
 ## Play
 
