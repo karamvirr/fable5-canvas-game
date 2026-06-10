@@ -1,0 +1,2606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMBERWOOD — Chapter I</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --gold: #e8c14a;
+    --moss: #2c3a24;
+    --ink:  #0c1209;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 28px 16px;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% -10%, #1c2a14 0%, transparent 60%),
+      radial-gradient(ellipse 90% 70% at 50% 115%, #131e0d 0%, transparent 55%),
+      var(--ink);
+    font-family: 'Press Start 2P', monospace;
+    color: #c9d6b8;
+    overflow-x: hidden;
+  }
+  /* faint grain over the whole page */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  header { text-align: center; user-select: none; }
+  h1 {
+    font-size: clamp(20px, 4vw, 34px);
+    letter-spacing: .12em;
+    color: var(--gold);
+    text-shadow:
+      0 3px 0 #6e5414,
+      0 6px 18px rgba(232,193,74,.25);
+  }
+  header p {
+    margin-top: 12px;
+    font-size: 9px;
+    letter-spacing: .25em;
+    color: #7d8f6a;
+  }
+
+  /* ---- the "CRT" bezel ---- */
+  .bezel {
+    position: relative;
+    padding: 14px;
+    background: linear-gradient(160deg, #232b1c, #11160d 70%);
+    border-radius: 8px;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.06),
+      0 24px 60px rgba(0,0,0,.65),
+      0 0 0 1px #000;
+  }
+  .screen {
+    position: relative;
+    line-height: 0;
+    box-shadow: inset 0 0 0 2px #000;
+  }
+  canvas {
+    width: 960px;
+    max-width: calc(100vw - 80px);
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background: #000;
+    display: block;
+  }
+  /* scanlines + vignette */
+  .screen::after {
+    content: "";
+    position: absolute; inset: 0;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse 95% 90% at 50% 50%, transparent 60%, rgba(0,0,0,.38) 100%);
+  }
+
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px 26px;
+    font-size: 9px;
+    letter-spacing: .12em;
+    color: #8da077;
+    user-select: none;
+  }
+  kbd {
+    font-family: inherit;
+    font-size: 8px;
+    color: #d8e3c4;
+    background: #1d2417;
+    border: 1px solid #39452c;
+    border-bottom-width: 3px;
+    border-radius: 4px;
+    padding: 4px 6px 3px;
+    margin: 0 2px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>EMBERWOOD</h1>
+  <p>A TALE OF THE GLADE &mdash; CHAPTER I</p>
+</header>
+
+<div class="bezel">
+  <div class="screen">
+    <canvas id="game" width="320" height="240"></canvas>
+  </div>
+</div>
+
+<footer>
+  <span><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd> MOVE</span>
+  <span><kbd>SPACE</kbd>/<kbd>Z</kbd> SWORD</span>
+  <span><kbd>X</kbd> BOW</span>
+  <span><kbd>V</kbd> AI DEBUG</span>
+  <span><kbd>M</kbd> SOUND</span>
+  <span>SNEAK UP BEHIND THE SNORTLINGS</span>
+  <span>SOME BUSHES BLINK BACK</span>
+</footer>
+
+<script>
+"use strict";
+
+/* ============================================================
+   EMBERWOOD — a top-down adventure on a single <canvas>
+   Logical resolution 320x240, scaled 3x with pixelated CSS.
+   ============================================================ */
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+
+const TILE = 16;
+const VIEW_W = 320, VIEW_H = 240;
+
+/* ----------------------------------------------------------
+   MAP — hand-authored, 40 x 30 tiles.
+   T tree  . grass  F flowers  W water  S sand path
+   B bush  R rock   = bridge
+---------------------------------------------------------- */
+const MAP_SRC = [
+  "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+  "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+  "TT.........SS..................F......TT",
+  "TT..T......SS...F.....T...............TT",
+  "TT.TTT.....SS......TTT........B.......TT",
+  "TT..T......SS.....TTTTT........F......TT",
+  "TT.........SS..R...TTT................TT",
+  "TT.F.......SS.......T..........R......TT",
+  "TT.........SS.........................TT",
+  "TT...B.....SS............WWWWWWWW.....TT",
+  "TT.........SS..........WWWWWWWWWWWW...TT",
+  "TT.........SS.......WWWWWWWWWWWWWWWW..TT",
+  "TTWWWWWWWWW==WWWWWWWWWWWWWWWWWWWWWWWWWTT",
+  "TTWWWWWWWWW==WWWWWWWWWWWWWWWWWWWWWWWWWTT",
+  "TTWWWWWWWWW==WWWWWWWWWWWWWWWWWWWWWWWWWTT",
+  "TTWWWWWWWWW==WWWWWWWWWWWWWWWWWWWWWWWWWTT",
+  "TT.........SS.......WWWWWWWWWWWWWWWW..TT",
+  "TT.........SS.........WWWWWWWWWWWW....TT",
+  "TT..F......SS............WWWWWWWW.....TT",
+  "TT.........SS.........SSSSSS..........TT",
+  "TT.B.......SS........SSSSSSSS....B....TT",
+  "TT...F.....SS....F....SSSSSS....F.....TT",
+  "TT.........SS..........R..............TT",
+  "TT..TT.....SS.....................TT..TT",
+  "TT.TTTT....SS...B.....F..........TTTT.TT",
+  "TT..TT.....SS....................TT...TT",
+  "TT.........SS......R..................TT",
+  "TT.........SS.........................TT",
+  "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+  "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+];
+const MAP_W = 40, MAP_H = MAP_SRC.length;
+// mutable copy (bushes can be cut)
+const map = MAP_SRC.map(r => r.padEnd(MAP_W, ".").slice(0, MAP_W).split(""));
+
+/* D sealed shrine door  M shrine stonework  G open gate (walkable) */
+const SOLID = new Set(["T", "W", "B", "R", "D", "M"]);
+const tileAt = (tx, ty) =>
+  (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) ? "T" : map[ty][tx];
+const solidAt = (tx, ty) => SOLID.has(tileAt(tx, ty));
+
+/* deterministic per-tile randomness for visual variety */
+function hash(x, y) {
+  let h = (x * 374761393 + y * 668265263) | 0;
+  h = (h ^ (h >> 13)) * 1274126177;
+  return ((h ^ (h >> 16)) >>> 0) / 4294967295;
+}
+
+/* ----------------------------------------------------------
+   SPRITES — pixel art authored as strings, baked to canvases
+---------------------------------------------------------- */
+const PAL = {
+  K: "#1a140c", // outline
+  G: "#35808f", // tunic teal
+  D: "#20525e", // tunic shade
+  S: "#f2c890", // skin
+  s: "#d89e62", // skin shade
+  F: "#ff8c3a", // scarf ember
+  f: "#d9622b", // scarf shade
+  A: "#c08c4a", // hair light strands
+  B: "#6f4a23", // boots
+  R: "#e23b3b", // heart red
+  W: "#ffffff",
+  C: "#c84a32", // creature hide
+  c: "#9c3322", // hide shade
+  O: "#e8a06a", // snout
+  o: "#d18450", // snout shade
+  x: "#50584a", // empty heart
+  Y: "#e8c14a", // gold
+  H: "#9c6b2f", // hair
+  L: "#4fa8b5", // tunic highlight (lit side)
+};
+
+function bake(rows, mirror = false) {
+  const c = document.createElement("canvas");
+  c.width = 16; c.height = 16;
+  const g = c.getContext("2d");
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const col = PAL[row[x]];
+      if (!col) continue;
+      g.fillStyle = col;
+      g.fillRect(mirror ? 15 - x : x, y, 1, 1);
+    }
+  });
+  return c;
+}
+
+/* The hero — the Ember Warden — is built from a 13-row BODY plus a
+   3-row LEG set, composed at bake time so every walk frame shares one
+   consistent torso. Messy chestnut hair with light strands and a stray
+   tuft, an ember scarf knotted at the neck (tail over the shoulder,
+   streaming behind in profile), teal tunic lit from the left. */
+const P_DOWN_BODY = [
+  ".....KKKKK......",
+  "....KHAHHHKK....",
+  "...KHAHHHHHHK...",
+  "...KHHHHHHHHKK..",
+  "...KHHHHHHHHK...",
+  "...KHSSSSSSHK...",
+  "...KSSKSSKSSK...",
+  "...KSSSSSSSSK...",
+  "...KfFFFFFFfK...",
+  "..KKLLGGGFDKK...",
+  ".KSKLGGGGFDKSK..",
+  ".KsKKKKYKKKKsK..",
+  "...KLGGGDDDDK...",
+];
+const P_UP_BODY = [
+  ".....KKKKK......",
+  "....KHHHHHKK....",
+  "...KHHHHHHHHK...",
+  "...KHHHHHHHHKK..",
+  "...KHHHHHHHHK...",
+  "...KHHAHHHHHK...",
+  "...KHHHHHHHHK...",
+  "....KHHHHHHK....",
+  "...KfFFFFFFfK...",
+  "..KKDFFFFFDKK...",
+  ".KSKDGFFGGDKSK..",
+  ".KsKKKKKKKKKsK..",
+  "...KDDDDDDDDK...",
+];
+const P_SIDE_BODY = [          // facing left; right is mirrored
+  "....KKKKK.......",
+  "...KHAHHHK......",
+  "..KHAHHHHHK.....",
+  "..KHHHHHHHHK....",
+  "..KHHHHHHHKK....",
+  "..KHSSSSHHHK....",
+  ".KSSKSSSHHHK....",
+  ".KSSSSSSHHK.....",
+  "..KFFFFFFKFFK...",
+  "..KKLGGGDKKFK...",
+  ".KSSKLGGGDK.....",
+  "..KKKKYKKKK.....",
+  "...KLGGDDDK.....",
+];
+
+/* leg sets: stand / stride A / stride B  (front views share legs) */
+const LEGS_FRONT = {
+  stand: [
+    "....KBBK.KBBK...",
+    "....KBBK.KBBK...",
+    ".....KK...KK....",
+  ],
+  a: [
+    "....KBBK.KBBK...",
+    "....KBBK..KK....",
+    ".....KK.........",
+  ],
+  b: [
+    "....KBBK.KBBK...",
+    ".....KK..KBBK...",
+    "..........KK....",
+  ],
+};
+const LEGS_SIDE = {
+  stand: [
+    "....KBBBK.......",
+    "....KBBBK.......",
+    ".....KKK........",
+  ],
+  a: [
+    "...KBBKKBBK.....",
+    "...KBBK.KBBK....",
+    "....KK...KK.....",
+  ],
+  b: [
+    "....KBBKBBK.....",
+    "....KBK.KBBK....",
+    ".....K...KK.....",
+  ],
+};
+
+/* attack poses: sword arm thrust out, stance braced */
+const P_DOWN_ATK = P_DOWN_BODY.slice();
+P_DOWN_ATK[10] = ".KSKLGGGGFDKSSK.";
+P_DOWN_ATK[11] = ".KsKKKKYKKKKSSK.";
+const P_UP_ATK = P_UP_BODY.slice();
+P_UP_ATK[8]  = "...KfFFFFFFfKSK.";
+P_UP_ATK[9]  = "..KKDFFFFFDKSKK.";
+const P_SIDE_ATK = P_SIDE_BODY.slice();
+P_SIDE_ATK[10] = "KSSSKLGGGDK.....";
+
+const makePose = (body, legs, mirror) => bake(body.concat(legs), mirror);
+const SPR = {
+  down: {
+    stand: makePose(P_DOWN_BODY, LEGS_FRONT.stand),
+    a:     makePose(P_DOWN_BODY, LEGS_FRONT.a),
+    b:     makePose(P_DOWN_BODY, LEGS_FRONT.b),
+    atk:   makePose(P_DOWN_ATK,  LEGS_FRONT.a),
+  },
+  up: {
+    stand: makePose(P_UP_BODY, LEGS_FRONT.stand),
+    a:     makePose(P_UP_BODY, LEGS_FRONT.a),
+    b:     makePose(P_UP_BODY, LEGS_FRONT.b),
+    atk:   makePose(P_UP_ATK,  LEGS_FRONT.a),
+  },
+  left: {
+    stand: makePose(P_SIDE_BODY, LEGS_SIDE.stand),
+    a:     makePose(P_SIDE_BODY, LEGS_SIDE.a),
+    b:     makePose(P_SIDE_BODY, LEGS_SIDE.b),
+    atk:   makePose(P_SIDE_ATK,  LEGS_SIDE.a),
+  },
+  right: {
+    stand: makePose(P_SIDE_BODY, LEGS_SIDE.stand, true),
+    a:     makePose(P_SIDE_BODY, LEGS_SIDE.a, true),
+    b:     makePose(P_SIDE_BODY, LEGS_SIDE.b, true),
+    atk:   makePose(P_SIDE_ATK,  LEGS_SIDE.a, true),
+  },
+};
+const WALK_SEQ = ["a", "stand", "b", "stand"];   // the 4-step cycle
+
+const HEART_ROWS = [
+  ".KK..KK.",
+  "KRRKKRRK",
+  "KRWRRRRK",
+  "KRRRRRRK",
+  ".KRRRRK.",
+  "..KRRK..",
+  "...KK...",
+];
+const HEART = bake(HEART_ROWS);
+const HEART_EMPTY = bake(HEART_ROWS.map(r => r.replace(/[RW]/g, "x")));
+const ARROW_ICON = bake([
+  "...KK...",
+  "..KYYK..",
+  "..KYYK..",
+  "...BB...",
+  "...BB...",
+  "...BB...",
+  "..WBBW..",
+  "...WW...",
+]);
+
+/* ---- the "snortling" — a snuffling red beast that guards the glade ---- */
+const E_DOWN1 = [
+  "................",
+  ".....KKKKKK.....",
+  "....KCCCCCCK....",
+  "...KCCCCCCCCK...",
+  "..KCCCCCCCCCCK..",
+  "..KCWWCCCCWWCK..",
+  "..KCWKCCCCWKCK..",
+  "..KCCCCCCCCCCK..",
+  "..KCCOOOOOOCCK..",
+  "...KCOooooOCK...",
+  "...KCCCCCCCCK...",
+  "...KcCCCCCCcK...",
+  "..KCCKCCCCKCCK..",
+  "..KCCK....KCCK..",
+  "...KK......KK...",
+  "................",
+];
+const E_DOWN2 = E_DOWN1.slice(0, 12).concat([
+  "...KCKCCCCKCK...",
+  "...KCK....KCK...",
+  "....KK....KK....",
+  "................",
+]);
+const E_UP1 = [
+  "................",
+  ".....KKKKKK.....",
+  "....KCCCCCCK....",
+  "...KCCCCCCCCK...",
+  "..KCCcCCCCcCCK..",
+  "..KCCCCCCCCCCK..",
+  "..KCCCccccCCCK..",
+  "..KCCCCCCCCCCK..",
+  "..KCCCCCCCCCCK..",
+  "...KCCCCCCCCK...",
+  "...KCCCCCCCCK...",
+  "...KcCCCCCCcK...",
+  "..KCCKCCCCKCCK..",
+  "..KCCK....KCCK..",
+  "...KK......KK...",
+  "................",
+];
+const E_UP2 = E_UP1.slice(0, 12).concat([
+  "...KCKCCCCKCK...",
+  "...KCK....KCK...",
+  "....KK....KK....",
+  "................",
+]);
+const E_SIDE1 = [
+  "................",
+  ".....KKKKKK.....",
+  "....KCCCCCCK....",
+  "...KCCCCCCCCK...",
+  "..KCCCCCCCCCK...",
+  ".KCWWCCCCCCCK...",
+  ".KCWKCCCCCCCK...",
+  ".KCCCCCCCCCCK...",
+  "KOOCCCCCCCCCK...",
+  "KOoOCCCCCCCCK...",
+  ".KKCCCCCCCCCK...",
+  "..KcCCCCCCCcK...",
+  "..KCCKCCCCKCK...",
+  "..KCCK...KCCK...",
+  "...KK.....KK....",
+  "................",
+];
+const E_SIDE2 = E_SIDE1.slice(0, 12).concat([
+  "...KCCKCCKCCK...",
+  "....KCK..KCK....",
+  ".....KK...KK....",
+  "................",
+]);
+
+const ESPR = {
+  down:  [bake(E_DOWN1), bake(E_DOWN2)],
+  up:    [bake(E_UP1),   bake(E_UP2)],
+  left:  [bake(E_SIDE1), bake(E_SIDE2)],
+  right: [bake(E_SIDE1, true), bake(E_SIDE2, true)],
+};
+/* white silhouettes for the hit flash */
+function whiten(src) {
+  const c = document.createElement("canvas");
+  c.width = 16; c.height = 16;
+  const g = c.getContext("2d");
+  g.drawImage(src, 0, 0);
+  g.globalCompositeOperation = "source-in";
+  g.fillStyle = "#ffffff";
+  g.fillRect(0, 0, 16, 16);
+  return c;
+}
+const EFLASH = {};
+for (const k in ESPR) EFLASH[k] = ESPR[k].map(whiten);
+
+/* ----------------------------------------------------------
+   AUDIO — everything synthesized live with WebAudio, no assets.
+   The context starts on the first keypress (autoplay policy).
+---------------------------------------------------------- */
+let ac = null, sndMaster, sndNoiseBuf, ambMute;
+let muted = false;
+let lowHpT = 0;
+
+function audioInit() {
+  if (ac) {
+    if (ac.state === "suspended") ac.resume();
+    return;
+  }
+  try { ac = new (window.AudioContext || window.webkitAudioContext)(); }
+  catch { return; }
+  sndMaster = ac.createGain();
+  sndMaster.gain.value = 0.5;
+  sndMaster.connect(ac.destination);
+  /* shared white-noise buffer for every noise-based effect */
+  const len = ac.sampleRate;
+  sndNoiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+  const d = sndNoiseBuf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  startAmbience();
+}
+
+function tone(freq, dur, opts = {}) {
+  if (!ac || muted) return;
+  const t0 = ac.currentTime + (opts.delay || 0);
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = opts.type || "square";
+  o.frequency.setValueAtTime(freq, t0);
+  if (opts.slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, opts.slide), t0 + dur);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(opts.vol ?? 0.15, t0 + (opts.attack ?? 0.005));
+  g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
+  o.connect(g); g.connect(sndMaster);
+  o.start(t0); o.stop(t0 + dur + 0.05);
+}
+
+function noise(dur, opts = {}) {
+  if (!ac || muted) return;
+  const t0 = ac.currentTime + (opts.delay || 0);
+  const src = ac.createBufferSource();
+  src.buffer = sndNoiseBuf;
+  src.loop = true;
+  const g = ac.createGain();
+  let node = src;
+  if (opts.filter) {
+    const f = ac.createBiquadFilter();
+    f.type = opts.filter;
+    f.frequency.setValueAtTime(opts.freq || 1000, t0);
+    if (opts.slide) f.frequency.exponentialRampToValueAtTime(Math.max(40, opts.slide), t0 + dur);
+    f.Q.value = opts.Q || 1;
+    src.connect(f); node = f;
+  }
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(opts.vol ?? 0.15, t0 + (opts.attack ?? 0.005));
+  g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
+  node.connect(g); g.connect(sndMaster);
+  src.start(t0); src.stop(t0 + dur + 0.05);
+}
+
+/* world sounds fade with distance from the player */
+function volAt(wx, wy) {
+  const d = Math.hypot(wx - (player.x + 8), wy - (player.y + 8));
+  return Math.max(0, 1 - d / 200);
+}
+
+const SFX = {
+  /* the whoosh: air sweeping DOWN as the blade decelerates, swelling
+     mid-arc, with a faint steel shimmer on top. Pitch varies per swing. */
+  swing:   () => {
+    const base = 1800 + Math.random() * 700;
+    noise(0.2,  { filter: "bandpass", freq: base, slide: 320, Q: 0.9, vol: 0.22, attack: 0.06 });
+    noise(0.16, { filter: "lowpass",  freq: 900,  slide: 280, vol: 0.1,  attack: 0.05 });
+    tone(3100 + Math.random() * 400, 0.09, { type: "triangle", slide: 2300, vol: 0.045, delay: 0.03 });
+  },
+  hit:     () => { tone(160, 0.12, { slide: 60, vol: 0.22 });
+                   noise(0.08, { filter: "lowpass", freq: 800, vol: 0.25 }); },
+  hurt:    () => { tone(110, 0.25, { type: "sawtooth", slide: 55, vol: 0.3 });
+                   noise(0.15, { filter: "lowpass", freq: 500, vol: 0.2 }); },
+  deflect: () => { tone(1320, 0.18, { type: "triangle", vol: 0.25 });
+                   tone(1980, 0.22, { type: "triangle", vol: 0.12, delay: 0.02 }); },
+  heart:   () => { tone(660, 0.09, { vol: 0.14 });
+                   tone(880, 0.09, { vol: 0.14, delay: 0.08 });
+                   tone(1320, 0.16, { vol: 0.14, delay: 0.16 }); },
+  step:    () => noise(0.04, { filter: "lowpass", freq: 700, vol: 0.05 }),
+  lowHp:   () => { tone(880, 0.07, { vol: 0.09 });
+                   tone(880, 0.07, { vol: 0.09, delay: 0.12 }); },
+  gameOver:() => [392, 311, 262, 196].forEach((f, i) =>
+                   tone(f, 0.35, { vol: 0.16, delay: i * 0.25 })),
+  /* the Pokemon sting: two quick rising notes */
+  alert:   (v = 1) => { tone(740, 0.07, { vol: 0.2 * v });
+                        tone(1180, 0.18, { vol: 0.2 * v, delay: 0.07 }); },
+  confused:(v = 1) => tone(500, 0.22, { type: "triangle", slide: 320, vol: 0.12 * v }),
+  cut:     (v = 1) => noise(0.15, { filter: "bandpass", freq: 1800, slide: 900, Q: 0.8, vol: 0.22 * v }),
+  spit:    (v = 1) => { noise(0.1, { filter: "highpass", freq: 1200, vol: 0.18 * v });
+                        tone(300, 0.08, { type: "triangle", slide: 90, vol: 0.12 * v }); },
+  reveal:  (v = 1) => { noise(0.25, { filter: "bandpass", freq: 1400, slide: 500, vol: 0.25 * v });
+                        tone(140, 0.3, { type: "sawtooth", slide: 90, vol: 0.18 * v }); },
+  die:     (v = 1) => { noise(0.3, { filter: "lowpass", freq: 900, slide: 150, vol: 0.3 * v });
+                        tone(220, 0.25, { slide: 60, vol: 0.15 * v }); },
+  bow:     () => { tone(180, 0.1, { type: "triangle", slide: 90, vol: 0.18 });      // string twang
+                   noise(0.12, { filter: "highpass", freq: 1500, vol: 0.14 }); },
+  dry:     () => tone(140, 0.08, { vol: 0.1 }),                                     // empty quiver
+  thunk:   (v = 1) => noise(0.06, { filter: "lowpass", freq: 900, vol: 0.14 * v }), // arrow stops
+  pickup:  () => { tone(520, 0.07, { type: "triangle", vol: 0.14 });
+                   tone(780, 0.1, { type: "triangle", vol: 0.12, delay: 0.06 }); },
+  snort:   (v = 1) => { noise(0.14, { filter: "lowpass", freq: 420, slide: 160, vol: 0.2 * v });
+                        tone(95, 0.12, { type: "sawtooth", slide: 70, vol: 0.1 * v }); },
+  shard:   () => { [523, 659, 784, 1047].forEach((f, i) =>
+                     tone(f, 0.12, { type: "triangle", vol: 0.16, delay: i * 0.07 }));
+                   tone(1568, 0.3, { type: "triangle", vol: 0.08, delay: 0.28 }); },
+  sealed:  () => { tone(120, 0.2, { slide: 80, vol: 0.18 });
+                   tone(110, 0.25, { vol: 0.12, delay: 0.18 }); },
+  door:    () => { noise(0.8, { filter: "lowpass", freq: 300, slide: 120, vol: 0.3 });
+                   [262, 330, 392, 523].forEach((f, i) =>
+                     tone(f, 0.3, { vol: 0.12, delay: 0.15 + i * 0.12 })); },
+  win:     () => [523, 659, 784, 1047, 1319].forEach((f, i) =>
+                   tone(f, i === 4 ? 0.6 : 0.18, { type: "triangle", vol: 0.18, delay: i * 0.16 })),
+};
+
+/* ambience: a soft breathing wind bed + occasional birdsong */
+function startAmbience() {
+  const src = ac.createBufferSource();
+  src.buffer = sndNoiseBuf;
+  src.loop = true;
+  const f = ac.createBiquadFilter();
+  f.type = "lowpass";
+  f.frequency.value = 320;
+  const wind = ac.createGain();
+  wind.gain.value = 0.03;
+  const lfo = ac.createOscillator();          // the wind swells and fades
+  lfo.frequency.value = 0.09;
+  const lfoAmt = ac.createGain();
+  lfoAmt.gain.value = 0.018;
+  lfo.connect(lfoAmt); lfoAmt.connect(wind.gain);
+  ambMute = ac.createGain();
+  src.connect(f); f.connect(wind); wind.connect(ambMute); ambMute.connect(sndMaster);
+  lfo.start(); src.start();
+  scheduleBirds();
+}
+function birdChirp() {
+  if (!ac || muted) return;
+  const base = 2200 + Math.random() * 1200;
+  const n = 2 + ((Math.random() * 3) | 0);
+  for (let i = 0; i < n; i++)
+    tone(base * (1 + Math.random() * 0.15), 0.06,
+      { type: "triangle", slide: base * 0.7, vol: 0.03, delay: i * 0.09 });
+}
+function scheduleBirds() {
+  setTimeout(() => { birdChirp(); scheduleBirds(); }, 2500 + Math.random() * 6000);
+}
+function toggleMute() {
+  muted = !muted;
+  if (ambMute) ambMute.gain.value = muted ? 0 : 1;
+}
+
+/* ----------------------------------------------------------
+   PLAYER
+---------------------------------------------------------- */
+const player = {
+  x: 11 * TILE + 4,   // start on the south path
+  y: 20 * TILE,
+  speed: 80,           // px / second
+  facing: "down",
+  moving: false,
+  animTime: 0,
+  walkStep: 0,         // index into WALK_SEQ
+  attackT: 0,          // seconds remaining in swing
+  hp: 3,
+  invulnT: 0,          // i-frames after taking a hit
+  kx: 0, ky: 0,        // knockback velocity
+  ammo: 5,             // arrows in the quiver
+  bowT: 0,             // bow animation timer
+  bowFired: false,
+};
+const ATTACK_TIME = 0.3;
+const SWORD_LEN = 13;
+const MAX_HP = 3;
+const BOW_TIME = 0.22, ARROW_SPEED = 200, MAX_ARROWS = 12;
+const arrows = [];     // player arrows in flight
+let gameOver = false;
+let gameWon = false;
+let hitstop = 0;        // brief freeze-frame when a hit lands
+let shake = 0;          // camera shake magnitude
+let hurtFlash = 0;      // red screen flash when the player is hurt
+let debugView = false;  // V toggles AI vision cones + planned paths
+
+/* ---- the quest: three ember shards open the north shrine ---- */
+const SHARD_SPOTS = [
+  { tx: 24, ty: 7 },    // amid the north woods patrol ground
+  { tx: 18, ty: 25 },   // deep in the south thicket, by the mimic nest
+  { tx: 36, ty: 16 },   // the lake's far shore, beside its guardian
+];
+const shardItems = SHARD_SPOTS.map(s => ({ ...s, taken: false }));
+let shardCount = 0;
+const stats = { time: 0, kills: 0, spotted: 0 };
+let bannerText = "", bannerT = 0, sealedCool = 0;
+function showBanner(text) { bannerText = text; bannerT = 2.6; }
+
+/* feet hitbox relative to sprite */
+const HB = { x: 3, y: 9, w: 10, h: 6 };
+
+function boxCollides(px, py, bb) {
+  const x0 = Math.floor((px + bb.x) / TILE);
+  const y0 = Math.floor((py + bb.y) / TILE);
+  const x1 = Math.floor((px + bb.x + bb.w - 1) / TILE);
+  const y1 = Math.floor((py + bb.y + bb.h - 1) / TILE);
+  for (let ty = y0; ty <= y1; ty++)
+    for (let tx = x0; tx <= x1; tx++)
+      if (solidAt(tx, ty)) return true;
+  return false;
+}
+const collides = (px, py) => boxCollides(px, py, HB);
+
+/* ----------------------------------------------------------
+   INPUT
+---------------------------------------------------------- */
+const keys = {};
+const DIRS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+
+addEventListener("keydown", e => {
+  audioInit();                                  // first gesture unlocks sound
+  if (e.key === "Enter" && (gameOver || gameWon)) { reset(); return; }
+  if (e.key === "v" || e.key === "V") { debugView = !debugView; return; }
+  if (e.key === "m" || e.key === "M") { toggleMute(); return; }
+  if (DIRS[e.key] || e.key === " " || e.key === "z" || e.key === "Z" || e.key === "x" || e.key === "X") {
+    e.preventDefault();
+    if (!keys[e.key] && DIRS[e.key]) player.facing = DIRS[e.key];
+    if ((e.key === " " || e.key.toLowerCase() === "z") && player.attackT <= 0 && player.bowT <= 0) {
+      player.attackT = ATTACK_TIME;
+      SFX.swing();
+    }
+    if (e.key.toLowerCase() === "x" && player.attackT <= 0 && player.bowT <= 0) {
+      if (player.ammo > 0) {
+        player.bowT = BOW_TIME;
+        player.bowFired = false;
+      } else {
+        SFX.dry();
+      }
+    }
+    keys[e.key] = true;
+  }
+});
+addEventListener("keyup", e => { keys[e.key] = false; });
+addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
+
+/* ----------------------------------------------------------
+   PARTICLES (leaf bursts, drifting motes)
+---------------------------------------------------------- */
+const particles = [];
+function burstLeaves(wx, wy) {
+  for (let i = 0; i < 12; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 20 + Math.random() * 40;
+    particles.push({
+      x: wx, y: wy,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 25,
+      life: 0.5 + Math.random() * 0.4,
+      color: Math.random() < 0.5 ? "#3f9e46" : "#2c7034",
+    });
+  }
+}
+const motes = Array.from({ length: 26 }, () => ({
+  x: Math.random() * MAP_W * TILE,
+  y: Math.random() * MAP_H * TILE,
+  p: Math.random() * Math.PI * 2,
+  s: 4 + Math.random() * 8,
+}));
+
+function burstPoof(wx, wy) {
+  for (let i = 0; i < 14; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 25 + Math.random() * 45;
+    particles.push({
+      x: wx, y: wy,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 20,
+      life: 0.4 + Math.random() * 0.4,
+      color: ["#c84a32", "#7a2418", "#ffffff"][i % 3],
+    });
+  }
+}
+/* a footfall: the step sound plus a terrain-colored fleck at the heel */
+function footstep() {
+  SFX.step();
+  const c = tileAt(Math.floor((player.x + 8) / TILE), Math.floor((player.y + 14) / TILE));
+  const col = (c === "S" || c === "=") ? "#cdb26d"
+            : (c === "." || c === "F") ? "#4c8a3c" : null;
+  if (!col) return;
+  particles.push({
+    x: player.x + 6 + Math.random() * 4, y: player.y + 15,
+    vx: (Math.random() - 0.5) * 14, vy: -8 - Math.random() * 8,
+    life: 0.3, color: col,
+  });
+}
+
+function dustPuff(wx, wy, n = 4) {
+  for (let i = 0; i < n; i++)
+    particles.push({
+      x: wx + (Math.random() * 6 - 3), y: wy + (Math.random() * 2 - 1),
+      vx: (Math.random() - 0.5) * 30, vy: -Math.random() * 15,
+      life: 0.3 + Math.random() * 0.2,
+      color: "#bdb08a",
+    });
+}
+function sparkle(wx, wy) {
+  for (let i = 0; i < 8; i++) {
+    const a = Math.random() * Math.PI * 2;
+    particles.push({
+      x: wx, y: wy,
+      vx: Math.cos(a) * 30, vy: Math.sin(a) * 30 - 30,
+      life: 0.35 + Math.random() * 0.3,
+      color: i % 2 ? "#ffffff" : "#f2c14e",
+    });
+  }
+}
+
+/* ----------------------------------------------------------
+   ENEMIES — "snortlings"
+
+   Perception model: each snortling has a vision cone in its
+   facing direction (~120 deg, 90px) plus a short all-around
+   "hearing" radius. Sight is raycast against trees, bushes
+   and rocks, so the player can sneak up behind cover or from
+   outside the cone.
+
+   States:  patrol -> alert("!") -> chase -> (lost you) seek
+   last-seen spot -> confused("?") -> patrol
+---------------------------------------------------------- */
+const FV = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+const E_HB = { x: 3, y: 7, w: 10, h: 8 };
+const E_SPEED_PATROL = 26, E_SPEED_CHASE = 54;
+const VIEW_DIST = 90;
+const VIEW_COS = Math.cos(1.05);     // ~60 deg half-angle cone
+const HEAR_DIST = 16;                // sensed even from behind, this close
+const ALERT_TIME = 0.5, CONFUSE_TIME = 0.9;
+const LOSE_TIME = 6;   // hard cap on hunting a stale trail — it walks to your
+                       // last-seen spot and investigates before this expires
+
+const ENEMY_SPAWNS = [
+  { tx: 17, ty: 7,  facing: "down"  },
+  { tx: 30, ty: 8,  facing: "left"  },
+  { tx: 5,  ty: 18, facing: "right" },
+  { tx: 25, ty: 20, facing: "down"  },
+  { tx: 18, ty: 24, facing: "up"    },
+  { tx: 30, ty: 23, facing: "left"  },
+];
+function makeEnemy(s) {
+  return {
+    x: s.tx * TILE, y: s.ty * TILE,
+    spawnX: s.tx * TILE, spawnY: s.ty * TILE,
+    hp: 2, state: "patrol", facing: s.facing,
+    vx: 0, vy: 0, dirT: 0,
+    alertT: 0, confT: 0, lostT: 0,
+    lastX: 0, lastY: 0,               // last place the player was seen
+    animT: 0, frame: 0,
+    flashT: 0, invulnT: 0, kx: 0, ky: 0,
+    atkT: 0, lvx: 0, lvy: 0,          // attack timer + lunge velocity
+    path: null, pathI: 0,             // A* route while chasing
+    repathT: 0, pathTx: -1, pathTy: -1, pathReached: true,
+    stymiedT: 0, huffT: 0,            // "can see you, can't reach you"
+    noAggroT: 0,                      // grace after giving up on the unreachable
+  };
+}
+const enemies = ENEMY_SPAWNS.map(makeEnemy);
+const drops = [];                     // heart pickups
+
+/* line of sight: blocked by trees, bushes, rocks (not water).
+   skipTx/skipTy lets a thornspitter see out of its own bush. */
+function losClear(x0, y0, x1, y1, skipTx, skipTy) {
+  const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 4);
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const tx = Math.floor((x0 + (x1 - x0) * t) / TILE);
+    const ty = Math.floor((y0 + (y1 - y0) * t) / TILE);
+    if (tx === skipTx && ty === skipTy) continue;
+    const c = tileAt(tx, ty);
+    if (c === "T" || c === "B" || c === "R" || c === "D" || c === "M") return false;
+  }
+  return true;
+}
+
+function canSee(e) {
+  const ex = e.x + 8, ey = e.y + 8;
+  const px = player.x + 8, py = player.y + 8;
+  const dx = px - ex, dy = py - ey;
+  const dist = Math.hypot(dx, dy);
+  if (dist > VIEW_DIST) return false;
+  if (dist > HEAR_DIST) {             // outside hearing range: cone check
+    const f = FV[e.facing];
+    if ((dx * f[0] + dy * f[1]) / dist < VIEW_COS) return false;
+  }
+  return losClear(ex, ey, px, py);
+}
+
+/* A* over the tile grid (4-way). If the goal is unreachable, returns
+   the route to the closest reachable tile and reached:false — that is
+   what lets a blocked hunter pace the river bank instead of locking. */
+function findPath(sx, sy, tx, ty) {
+  const W = MAP_W, N = W * MAP_H;
+  const walk = (x, y) => x >= 0 && y >= 0 && x < W && y < MAP_H && !SOLID.has(map[y][x]);
+  if (sx === tx && sy === ty) return { path: [], reached: true };
+  const g = new Int32Array(N).fill(-1);
+  const came = new Int32Array(N).fill(-1);
+  const closed = new Uint8Array(N);
+  const h = (x, y) => Math.abs(x - tx) + Math.abs(y - ty);
+  const open = [[sx, sy]];
+  const startI = sy * W + sx;
+  g[startI] = 0;
+  let best = startI, bestH = h(sx, sy), found = -1, iter = 0;
+  while (open.length && iter++ < 900) {
+    let bi = 0, bf = Infinity;
+    for (let i = 0; i < open.length; i++) {
+      const f = g[open[i][1] * W + open[i][0]] + h(open[i][0], open[i][1]) * 1.001;
+      if (f < bf) { bf = f; bi = i; }
+    }
+    const [cx, cy] = open.splice(bi, 1)[0];
+    const ci = cy * W + cx;
+    if (closed[ci]) continue;
+    closed[ci] = 1;
+    const ch = h(cx, cy);
+    if (ch < bestH) { bestH = ch; best = ci; }
+    if (cx === tx && cy === ty) { found = ci; break; }
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx + dx, ny = cy + dy;
+      if (!walk(nx, ny)) continue;
+      const ni = ny * W + nx;
+      if (closed[ni]) continue;
+      const ng = g[ci] + 1;
+      if (g[ni] === -1 || ng < g[ni]) {
+        g[ni] = ng; came[ni] = ci;
+        open.push([nx, ny]);
+      }
+    }
+  }
+  const path = [];
+  let cur = found !== -1 ? found : best;
+  while (cur !== -1 && cur !== startI) {
+    path.push({ x: cur % W, y: (cur / W) | 0 });
+    cur = came[cur];
+  }
+  path.reverse();
+  return { path, reached: found !== -1 };
+}
+
+/* an alerted hunter tracks you without needing you in its cone —
+   only cover (or range) breaks the chase */
+function chaseSee(e) {
+  const ex = e.x + 8, ey = e.y + 8, px = player.x + 8, py = player.y + 8;
+  if (Math.hypot(px - ex, py - ey) > VIEW_DIST * 1.3) return false;
+  return losClear(ex, ey, px, py);
+}
+
+function faceToward(e, tx, ty) {
+  const dx = tx - (e.x + 8), dy = ty - (e.y + 8);
+  if (Math.abs(dx) > Math.abs(dy)) e.facing = dx < 0 ? "left" : "right";
+  else e.facing = dy < 0 ? "up" : "down";
+}
+
+/* axis-separated move; returns true if fully blocked */
+function moveEnemy(e, vx, vy, dt) {
+  let moved = false;
+  const sx = vx * dt, sy = vy * dt;
+  if (sx && !boxCollides(e.x + sx, e.y, E_HB)) { e.x += sx; moved = true; }
+  if (sy && !boxCollides(e.x, e.y + sy, E_HB)) { e.y += sy; moved = true; }
+  return !moved && (sx || sy);
+}
+
+function startAlert(e) {
+  e.state = "alert";
+  e.alertT = ALERT_TIME;
+  e.vx = e.vy = 0;
+  e.lastX = player.x + 8; e.lastY = player.y + 8;
+  stats.spotted++;
+  SFX.alert(volAt(e.x + 8, e.y + 8));
+}
+
+function updateEnemy(e, dt) {
+  e.flashT = Math.max(0, e.flashT - dt);
+  e.invulnT = Math.max(0, e.invulnT - dt);
+  e.noAggroT = Math.max(0, e.noAggroT - dt);
+  /* while the give-up grace holds, only a close approach re-aggros */
+  const wary = e.noAggroT <= 0 ||
+    Math.hypot((player.x + 8) - (e.x + 8), (player.y + 8) - (e.y + 8)) < 36;
+
+  /* knockback (also acts as hitstun) */
+  if (Math.abs(e.kx) > 2 || Math.abs(e.ky) > 2) {
+    if (!boxCollides(e.x + e.kx * dt, e.y, E_HB)) e.x += e.kx * dt;
+    if (!boxCollides(e.x, e.y + e.ky * dt, E_HB)) e.y += e.ky * dt;
+    const d = Math.exp(-9 * dt);
+    e.kx *= d; e.ky *= d;
+    return;
+  }
+
+  let speed = 0;
+
+  switch (e.state) {
+    case "patrol": {
+      e.dirT -= dt;
+      if (e.dirT <= 0) {
+        e.dirT = 0.9 + Math.random() * 1.6;
+        if (Math.hypot(e.x - e.spawnX, e.y - e.spawnY) > 5 * TILE) {
+          e.state = "return";           // wandered far: walk home properly
+          e.repathT = 0;
+          break;
+        }
+        if (Math.random() < 0.3) { e.vx = 0; e.vy = 0; }     // pause and sniff
+        else {
+          const d = ["up", "down", "left", "right"][(Math.random() * 4) | 0];
+          e.facing = d;
+          e.vx = FV[d][0] * E_SPEED_PATROL;
+          e.vy = FV[d][1] * E_SPEED_PATROL;
+        }
+      }
+      if (moveEnemy(e, e.vx, e.vy, dt)) e.dirT = 0;          // bumped a wall
+      speed = Math.hypot(e.vx, e.vy);
+      if (wary && canSee(e)) startAlert(e);
+      break;
+    }
+
+    case "alert": {
+      faceToward(e, player.x + 8, player.y + 8);
+      e.alertT -= dt;
+      if (e.alertT <= 0) { e.state = "chase"; e.lostT = 0; }
+      break;
+    }
+
+    case "chase": {
+      e.alertT -= dt;                 // lets the "!" linger briefly into the chase
+      const seen = chaseSee(e);
+      if (seen) {
+        e.lastX = player.x + 8; e.lastY = player.y + 8;
+        e.lostT = 0;
+      } else {
+        e.lostT += dt;
+      }
+      const dist = Math.hypot(e.lastX - (e.x + 8), e.lastY - (e.y + 8));
+      if (e.lostT > LOSE_TIME || (dist < 6 && !seen)) {
+        e.state = "confused"; e.confT = CONFUSE_TIME;
+        e.vx = e.vy = 0;
+        SFX.confused(volAt(e.x + 8, e.y + 8));
+        break;
+      }
+
+      /* plan a route — A* around water, trees, anything solid */
+      const ttx = Math.floor(e.lastX / TILE), tty = Math.floor(e.lastY / TILE);
+      e.repathT -= dt;
+      if (e.repathT <= 0 || ttx !== e.pathTx || tty !== e.pathTy) {
+        e.repathT = 0.4;
+        e.pathTx = ttx; e.pathTy = tty;
+        const res = findPath(Math.floor((e.x + 8) / TILE), Math.floor((e.y + 8) / TILE), ttx, tty);
+        e.path = res.path; e.pathI = 0; e.pathReached = res.reached;
+      }
+
+      /* visible but unreachable: pace the closest bank, fume, then lose interest */
+      if (!e.pathReached && seen) {
+        e.stymiedT += dt;
+        e.huffT -= dt;
+        if (e.huffT <= 0) {
+          e.huffT = 1.1 + Math.random() * 0.6;
+          dustPuff(e.x + 8, e.y + 14, 3);
+          SFX.snort(volAt(e.x + 8, e.y + 8));
+        }
+        if (e.stymiedT > 4) {
+          e.state = "confused"; e.confT = CONFUSE_TIME;
+          e.noAggroT = 5;             // it knows it can't get to you
+          e.vx = e.vy = 0;
+          SFX.confused(volAt(e.x + 8, e.y + 8));
+          break;
+        }
+      } else {
+        e.stymiedT = 0;
+      }
+
+      /* follow the route; past the last waypoint, steer straight in */
+      while (e.path && e.pathI < e.path.length &&
+             Math.hypot(e.path[e.pathI].x * TILE + 8 - (e.x + 8),
+                        e.path[e.pathI].y * TILE + 8 - (e.y + 8)) < 3) e.pathI++;
+      let mx = e.lastX, my = e.lastY;
+      if (e.path && e.pathI < e.path.length) {
+        mx = e.path[e.pathI].x * TILE + 8;
+        my = e.path[e.pathI].y * TILE + 8;
+      }
+      const ddx = mx - (e.x + 8), ddy = my - (e.y + 8);
+      const dd = Math.hypot(ddx, ddy);
+      if (dd > 1.5) {
+        e.vx = (ddx / dd) * E_SPEED_CHASE;
+        e.vy = (ddy / dd) * E_SPEED_CHASE;
+        faceToward(e, mx, my);
+        moveEnemy(e, e.vx, e.vy, dt);
+        speed = E_SPEED_CHASE;
+      } else {
+        faceToward(e, e.lastX, e.lastY);   // dead end: stand and glare at you
+      }
+
+      /* close enough to strike — but only with a clear line: never
+         bite at cover standing between us, path around it instead */
+      const pd = Math.hypot((player.x + 8) - (e.x + 8), (player.y + 8) - (e.y + 8));
+      if (pd < 26 && losClear(e.x + 8, e.y + 8, player.x + 8, player.y + 8)) {
+        e.state = "windup"; e.atkT = 0.28;
+        e.vx = e.vy = 0;
+        speed = 0;
+      }
+      break;
+    }
+
+    case "windup": {                  // squash down, tremble, take aim
+      faceToward(e, player.x + 8, player.y + 8);
+      e.atkT -= dt;
+      if (e.atkT <= 0) {
+        const dx = (player.x + 8) - (e.x + 8), dy = (player.y + 8) - (e.y + 8);
+        const d = Math.hypot(dx, dy) || 1;
+        e.lvx = (dx / d) * 170; e.lvy = (dy / d) * 170;
+        e.state = "lunge"; e.atkT = 0.22;
+        dustPuff(e.x + 8, e.y + 14);  // kicks off
+      }
+      break;
+    }
+
+    case "lunge": {                   // the bite — a fast committed dash
+      e.atkT -= dt;
+      const blocked = moveEnemy(e, e.lvx, e.lvy, dt);
+      if (Math.random() < dt * 25) dustPuff(e.x + 8, e.y + 14, 1);
+      speed = 170;
+      if (e.atkT <= 0 || blocked) { e.state = "recover"; e.atkT = 0.4; }
+      break;
+    }
+
+    case "recover": {                 // winded — your opening
+      e.atkT -= dt;
+      if (e.atkT <= 0) { e.state = "chase"; e.lostT = 0; e.alertT = -1; }
+      break;
+    }
+
+    case "confused": {
+      e.confT -= dt;
+      if (wary && canSee(e)) { startAlert(e); break; }
+      if (e.confT <= 0) { e.state = "patrol"; e.dirT = 0; }
+      break;
+    }
+
+    case "return": {                  // walk back to the spawn post, via A*
+      e.repathT -= dt;
+      if (e.repathT <= 0) {
+        e.repathT = 1.0;
+        const res = findPath(Math.floor((e.x + 8) / TILE), Math.floor((e.y + 8) / TILE),
+                             Math.floor((e.spawnX + 8) / TILE), Math.floor((e.spawnY + 8) / TILE));
+        e.path = res.path; e.pathI = 0;
+        if (!res.reached || !res.path.length) {
+          /* no way home from here — adopt this spot as the new post */
+          e.spawnX = e.x; e.spawnY = e.y;
+          e.state = "patrol"; e.dirT = 0;
+          break;
+        }
+      }
+      while (e.path && e.pathI < e.path.length &&
+             Math.hypot(e.path[e.pathI].x * TILE + 8 - (e.x + 8),
+                        e.path[e.pathI].y * TILE + 8 - (e.y + 8)) < 3) e.pathI++;
+      if (e.path && e.pathI < e.path.length) {
+        const wx = e.path[e.pathI].x * TILE + 8, wy = e.path[e.pathI].y * TILE + 8;
+        const d = Math.hypot(wx - (e.x + 8), wy - (e.y + 8)) || 1;
+        e.vx = ((wx - (e.x + 8)) / d) * E_SPEED_PATROL;
+        e.vy = ((wy - (e.y + 8)) / d) * E_SPEED_PATROL;
+        faceToward(e, wx, wy);
+        moveEnemy(e, e.vx, e.vy, dt);
+        speed = E_SPEED_PATROL;
+      } else {
+        e.state = "patrol"; e.dirT = 0;       // home again
+      }
+      if (wary && canSee(e)) startAlert(e);   // still watching on the way
+      break;
+    }
+  }
+
+  /* walk animation */
+  if (speed > 1) {
+    e.animT += dt;
+    if (e.animT > 0.16) { e.animT = 0; e.frame ^= 1; }
+  } else {
+    e.frame = 0; e.animT = 0;
+  }
+}
+
+function hitEnemy(e, hx, hy) {
+  e.hp--;
+  e.invulnT = 0.35;
+  e.flashT = 0.12;
+  sparkle(hx ?? e.x + 8, hy ?? e.y + 8);
+  SFX.hit();
+  hitstop = Math.max(hitstop, 0.05);
+  shake = Math.max(shake, 1.5);
+  if (e.state === "windup" || e.state === "lunge" || e.state === "recover")
+    e.state = "chase";                // a good hit interrupts the attack
+  const dx = (e.x + 8) - (player.x + 8), dy = (e.y + 8) - (player.y + 8);
+  const d = Math.hypot(dx, dy) || 1;
+  e.kx = (dx / d) * 140; e.ky = (dy / d) * 140;
+  if (e.hp <= 0) {
+    burstPoof(e.x + 8, e.y + 8);
+    SFX.die();
+    stats.kills++;
+    const r = Math.random();
+    if (r < 0.4) drops.push({ x: e.x + 4, y: e.y + 5, life: 12, type: "heart" });
+    else if (r < 0.75) drops.push({ x: e.x + 4, y: e.y + 5, life: 12, type: "arrow" });
+  } else if (e.state === "patrol" || e.state === "confused" || e.state === "return") {
+    startAlert(e);                    // getting stabbed is very noticeable
+  }
+}
+
+function damagePlayer(dx, dy) {
+  const d = Math.hypot(dx, dy) || 1;
+  player.hp--;
+  player.invulnT = 1.1;
+  player.kx = (dx / d) * 150;
+  player.ky = (dy / d) * 150;
+  hitstop = Math.max(hitstop, 0.09);
+  shake = Math.max(shake, 3);
+  hurtFlash = 1;
+  SFX.hurt();
+  if (player.hp <= 0) {
+    gameOver = true;
+    SFX.gameOver();
+  }
+}
+
+/* ----------------------------------------------------------
+   THORNSPITTERS
+
+   A carnivorous plant disguised as a bush. Its anchor tile
+   stays "B" on the map, so while dormant it blocks movement
+   and sight exactly like real cover. Within range it erupts
+   ("!"), telegraphs with a glowing eye, spits thorns at your
+   position, then ducks back down to reload (invulnerable).
+   Thorns can be deflected with the sword; a reflected thorn
+   kills anything it touches — including a ducked spitter.
+
+   States: dormant -> rise("!") -> aim -> spit -> duck -> ...
+           (sinks back to dormant when you leave)
+---------------------------------------------------------- */
+const SPITTER_SPAWNS = [
+  { tx: 30, ty: 4 },     // the lone bush in the north woods
+  { tx: 33, ty: 20 },    // beside the south beach
+  { tx: 16, ty: 24 },    // among the south thicket
+  { tx: 35, ty: 17 },    // the lake's east shore
+];
+const REVEAL_DIST = 70, SPIT_RANGE = 115, RE_RISE_RANGE = 95;
+const AIM_TIME = 0.6, DUCK_TIME = 1.6;
+const THORN_SPEED = 85, THORN_REFL_SPEED = 150;
+
+function makeSpitter(sp) {
+  return {
+    tx: sp.tx, ty: sp.ty,
+    hp: 2, state: "dormant",
+    t: 0, riseH: 0, eyeGlow: 0, lostT: 0,
+    revealAge: 9,                       // drives the "!" pop
+    flashT: 0, invulnT: 0, recoilT: 0,
+  };
+}
+const spitters = SPITTER_SPAWNS.map(makeSpitter);
+
+/* (re)build the tile world: fresh map, mimic disguises, the shrine */
+function buildWorld() {
+  for (let y = 0; y < MAP_H; y++)
+    map[y] = MAP_SRC[y].padEnd(MAP_W, ".").slice(0, MAP_W).split("");
+  SPITTER_SPAWNS.forEach(s => { map[s.ty][s.tx] = "B"; });
+  map[1][10] = "M"; map[1][13] = "M";       // shrine stonework
+  map[1][11] = "D"; map[1][12] = "D";       // the sealed door, top of the path
+}
+buildWorld();
+const thorns = [];
+
+/* a bush tile got hit (sword or thorn): mimics wake, real bushes shred */
+function bushHit(tx, ty) {
+  const sp = spitters.find(s => s.tx === tx && s.ty === ty);
+  if (sp) { revealSpitter(sp); return; }
+  map[ty][tx] = ".";
+  burstLeaves(tx * TILE + 8, ty * TILE + 8);
+  SFX.cut(volAt(tx * TILE + 8, ty * TILE + 8));
+  if (Math.random() < 0.2)              // bushes sometimes hide stray arrows
+    drops.push({ x: tx * TILE + 4, y: ty * TILE + 4, life: 12, type: "arrow" });
+}
+
+function revealSpitter(s) {
+  if (s.state !== "dormant") return;
+  s.state = "rise";
+  s.t = 0.45;
+  s.revealAge = 0;
+  stats.spotted++;
+  burstLeaves(s.tx * TILE + 8, s.ty * TILE + 8);
+  SFX.reveal(volAt(s.tx * TILE + 8, s.ty * TILE + 8));
+  SFX.alert(volAt(s.tx * TILE + 8, s.ty * TILE + 8));
+}
+
+function killSpitter(s) {
+  s.hp = 0;
+  const cx = s.tx * TILE + 8, cy = s.ty * TILE + 4;
+  burstLeaves(cx, cy);
+  for (let i = 0; i < 10; i++) {
+    const a = Math.random() * Math.PI * 2;
+    particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(a) * 40, vy: Math.sin(a) * 40 - 20,
+      life: 0.4 + Math.random() * 0.4,
+      color: i % 3 === 0 ? "#ffffff" : i % 3 === 1 ? "#b14a6e" : "#6fae3f",
+    });
+  }
+  map[s.ty][s.tx] = ".";                // the disguise dies with it
+  SFX.die(volAt(cx, cy));
+  stats.kills++;
+  const r = Math.random();
+  if (r < 0.5) drops.push({ x: cx - 4, y: cy + 2, life: 12, type: "heart" });
+  else if (r < 0.8) drops.push({ x: cx - 4, y: cy + 2, life: 12, type: "arrow" });
+}
+
+function fireThorn(x, y, ang, refl = false) {
+  const sp = refl ? THORN_REFL_SPEED : THORN_SPEED;
+  thorns.push({ x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, refl, age: 0, life: 3 });
+}
+
+function updateSpitter(s, dt) {
+  s.flashT = Math.max(0, s.flashT - dt);
+  s.invulnT = Math.max(0, s.invulnT - dt);
+  s.recoilT = Math.max(0, s.recoilT - dt);
+  s.revealAge += dt;
+
+  const hx = s.tx * TILE + 8, hy = s.ty * TILE + 6;
+  const px = player.x + 8, py = player.y + 8;
+  const dist = Math.hypot(px - hx, py - hy);
+  const seen = losClear(hx, hy, px, py, s.tx, s.ty);
+
+  switch (s.state) {
+    case "dormant":
+      if (dist < REVEAL_DIST && seen) revealSpitter(s);
+      break;
+
+    case "rise":
+      s.riseH = Math.min(10, s.riseH + 40 * dt);
+      s.t -= dt;
+      if (s.t <= 0) { s.state = "aim"; s.t = AIM_TIME; s.lostT = 0; }
+      break;
+
+    case "aim": {
+      s.riseH = Math.min(10, s.riseH + 40 * dt);
+      s.eyeGlow = 1 - Math.max(0, s.t / AIM_TIME);
+      const inSight = dist < SPIT_RANGE && seen;
+      if (!inSight) {
+        s.lostT += dt;
+        if (s.lostT > 1.0) { s.state = "sink"; s.eyeGlow = 0; break; }
+      } else s.lostT = 0;
+      s.t -= dt;
+      if (s.t <= 0) {
+        s.eyeGlow = 0;
+        if (dist < 24) {                       // too close to fire: panic duck
+          s.state = "duck"; s.t = 1.0;
+        } else if (inSight) {
+          const fy = s.ty * TILE - 4;
+          const ang = Math.atan2(py - fy, px - hx);
+          if (dist > 60) {                     // far away: a 3-thorn fan
+            fireThorn(hx, fy, ang - 0.22);
+            fireThorn(hx, fy, ang);
+            fireThorn(hx, fy, ang + 0.22);
+          } else {
+            fireThorn(hx, fy, ang);
+          }
+          s.recoilT = 0.15;
+          SFX.spit(volAt(hx, fy));
+          for (let i = 0; i < 5; i++)          // muzzle burst of petals
+            particles.push({
+              x: hx, y: fy,
+              vx: (Math.random() - 0.5) * 60, vy: (Math.random() - 0.5) * 60,
+              life: 0.2, color: i % 2 ? "#b14a6e" : "#6fae3f",
+            });
+          s.state = "duck"; s.t = DUCK_TIME;
+        } else {
+          s.state = "sink";
+        }
+      }
+      break;
+    }
+
+    case "duck":                               // reloading, tucked & safe
+      s.riseH = Math.max(2, s.riseH - 60 * dt);
+      s.t -= dt;
+      if (s.t <= 0) {
+        if (dist < RE_RISE_RANGE && seen) { s.state = "rise"; s.t = 0.25; }
+        else s.state = "sink";
+      }
+      break;
+
+    case "sink":
+      s.riseH -= 40 * dt;
+      if (s.riseH <= 0) { s.riseH = 0; s.state = "dormant"; s.eyeGlow = 0; }
+      break;
+  }
+}
+
+/* ----------------------------------------------------------
+   UPDATE
+---------------------------------------------------------- */
+/* The swing is an arc sweep, not a stab: a brief wind-up at the start
+   angle, an eased ~140° slash across the facing direction, then a
+   follow-through hold before the blade pulls back. */
+const FACING_ANGLE = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
+const SWING_FROM = -1.92;   // start angle relative to facing (~ -110 deg)
+const SWING_TO   =  0.59;   // end angle relative to facing  (~ +34 deg)
+
+function swingPivot() {
+  const px = Math.round(player.x), py = Math.round(player.y);
+  switch (player.facing) {              // the sword hand, per sprite
+    case "down":  return { x: px + 12, y: py + 10 };
+    case "up":    return { x: px + 3,  y: py + 5 };
+    case "left":  return { x: px + 3,  y: py + 9 };
+    case "right": return { x: px + 12, y: py + 9 };
+  }
+}
+
+function swingState() {
+  if (player.attackT <= 0) return null;
+  const t = 1 - player.attackT / ATTACK_TIME;     // 0 -> 1 over the swing
+  let sweep, len = SWORD_LEN;
+  if (t < 0.1) {                                  // wind-up: blade flicks out
+    sweep = 0;
+    len = SWORD_LEN * (0.4 + 6 * t);
+  } else if (t < 0.62) {                          // the slash, smoothstepped
+    const u = (t - 0.1) / 0.52;
+    sweep = u * u * (3 - 2 * u);
+  } else {                                        // follow-through: hold, pull back
+    sweep = 1;
+    const u = (t - 0.62) / 0.38;
+    len = u < 0.45 ? SWORD_LEN : SWORD_LEN * (1 - (u - 0.45) / 0.55);
+  }
+  len = Math.max(0, Math.min(SWORD_LEN, len));
+  const s = player.facing === "left" ? -1 : 1;    // mirror the arc when facing left
+  const base = FACING_ANGLE[player.facing];
+  const angleAt = f => base + s * (SWING_FROM + (SWING_TO - SWING_FROM) * f);
+  return { t, sweep, len, s, angleAt, angle: angleAt(sweep), pivot: swingPivot() };
+}
+
+function update(dt) {
+  if (gameOver || gameWon) return;
+  stats.time += dt;
+  bannerT = Math.max(0, bannerT - dt);
+  sealedCool = Math.max(0, sealedCool - dt);
+  player.invulnT = Math.max(0, player.invulnT - dt);
+  shake = Math.max(0, shake - 14 * dt);
+  hurtFlash = Math.max(0, hurtFlash - 4 * dt);
+
+  /* the classic low-health warning, kept gentle */
+  if (player.hp === 1) {
+    lowHpT -= dt;
+    if (lowHpT <= 0) { SFX.lowHp(); lowHpT = 1.6; }
+  }
+
+  /* swing timer + the blade cuts/strikes anything it passes through */
+  if (player.attackT > 0) {
+    player.attackT -= dt;
+    const sw = swingState();
+    if (sw && sw.len > SWORD_LEN * 0.5) {
+      const dx = Math.cos(sw.angle), dy = Math.sin(sw.angle);
+      for (const r of [sw.len * 0.7, sw.len + 2]) {
+        const tx = Math.floor((sw.pivot.x + dx * r) / TILE);
+        const ty = Math.floor((sw.pivot.y + dy * r) / TILE);
+        if (tileAt(tx, ty) === "B") bushHit(tx, ty);
+      }
+      for (const e of enemies) {
+        if (e.hp <= 0 || e.invulnT > 0) continue;
+        for (const r of [sw.len * 0.5, sw.len * 0.85, sw.len + 2]) {
+          const bx = sw.pivot.x + dx * r, by = sw.pivot.y + dy * r;
+          if (bx > e.x + 2 && bx < e.x + 14 && by > e.y + 3 && by < e.y + 15) {
+            hitEnemy(e, bx, by);
+            break;
+          }
+        }
+      }
+      /* sword vs risen thornspitter pods */
+      for (const s of spitters) {
+        if (s.hp <= 0 || s.riseH < 6 || s.invulnT > 0) continue;
+        const sx = s.tx * TILE, sy = s.ty * TILE;
+        for (const r of [sw.len * 0.5, sw.len * 0.85, sw.len + 2]) {
+          const bx = sw.pivot.x + dx * r, by = sw.pivot.y + dy * r;
+          if (bx > sx + 1 && bx < sx + 15 && by > sy - 12 && by < sy + 14) {
+            s.hp--;
+            s.flashT = 0.15;
+            s.invulnT = 0.4;
+            if (s.hp <= 0) killSpitter(s);
+            break;
+          }
+        }
+      }
+      /* deflect incoming thorns — they fly back along their path */
+      for (const t of thorns) {
+        if (t.refl) continue;
+        for (const r of [sw.len * 0.5, sw.len * 0.85, sw.len + 2]) {
+          const bx = sw.pivot.x + dx * r, by = sw.pivot.y + dy * r;
+          if (Math.hypot(t.x - bx, t.y - by) < 7) {
+            const n = Math.hypot(t.vx, t.vy) || 1;
+            t.vx = (-t.vx / n) * THORN_REFL_SPEED;
+            t.vy = (-t.vy / n) * THORN_REFL_SPEED;
+            t.refl = true;
+            t.life = 3;
+            sparkle(t.x, t.y);
+            SFX.deflect();
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  /* bow: a beat to draw, then the arrow looses */
+  if (player.bowT > 0) {
+    player.bowT -= dt;
+    if (!player.bowFired && player.bowT <= BOW_TIME - 0.1) {
+      player.bowFired = true;
+      player.ammo--;
+      const f = FV[player.facing];
+      arrows.push({
+        x: player.x + 8 + f[0] * 6, y: player.y + 8 + f[1] * 6,
+        vx: f[0] * ARROW_SPEED, vy: f[1] * ARROW_SPEED,
+        life: 0.95,
+      });
+      SFX.bow();
+    }
+  }
+
+  /* movement (locked during the swing and the bow draw) */
+  let dx = 0, dy = 0;
+  if (player.attackT <= 0 && player.bowT <= 0) {
+    if (keys.ArrowLeft)  dx -= 1;
+    if (keys.ArrowRight) dx += 1;
+    if (keys.ArrowUp)    dy -= 1;
+    if (keys.ArrowDown)  dy += 1;
+  }
+  const px0 = player.x, py0 = player.y;
+  if (dx !== 0 || dy !== 0) {
+    const inv = 1 / Math.hypot(dx, dy);
+    const sx = dx * inv * player.speed * dt;
+    const sy = dy * inv * player.speed * dt;
+    if (!collides(player.x + sx, player.y)) player.x += sx;
+    if (!collides(player.x, player.y + sy)) player.y += sy;
+
+    // face the dominant held direction
+    if (dy < 0) player.facing = "up";
+    else if (dy > 0) player.facing = "down";
+    if (dx < 0 && dy === 0) player.facing = "left";
+    else if (dx > 0 && dy === 0) player.facing = "right";
+  }
+
+  /* animate only on real displacement — no treadmilling against walls */
+  const wasMoving = player.moving;
+  player.moving = player.x !== px0 || player.y !== py0;
+  if (player.moving) {
+    if (!wasMoving) {                 // first step lands instantly
+      player.walkStep = 0;
+      player.animTime = 0;
+      footstep();
+    } else {
+      player.animTime += dt;
+      if (player.animTime > 0.11) {
+        player.animTime = 0;
+        player.walkStep = (player.walkStep + 1) & 3;
+        if ((player.walkStep & 1) === 0) footstep();   // each stride pose
+      }
+    }
+  } else {
+    player.walkStep = 0;
+    player.animTime = 0;
+  }
+
+  /* player knockback */
+  if (Math.abs(player.kx) > 2 || Math.abs(player.ky) > 2) {
+    if (!collides(player.x + player.kx * dt, player.y)) player.x += player.kx * dt;
+    if (!collides(player.x, player.y + player.ky * dt)) player.y += player.ky * dt;
+    const d = Math.exp(-9 * dt);
+    player.kx *= d; player.ky *= d;
+  }
+
+  /* enemies */
+  for (const e of enemies) updateEnemy(e, dt);
+
+  /* keep snortlings from stacking on each other */
+  for (let i = 0; i < enemies.length; i++)
+    for (let j = i + 1; j < enemies.length; j++) {
+      const a = enemies[i], b = enemies[j];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 0 && d < 12) {
+        const push = ((12 - d) / d) * 0.5;
+        a.x -= dx * push; a.y -= dy * push;
+        b.x += dx * push; b.y += dy * push;
+      }
+    }
+
+  /* contact damage */
+  for (const e of enemies) {
+    if (player.invulnT > 0) break;
+    if (e.hp <= 0) continue;
+    if (player.x + HB.x < e.x + E_HB.x + E_HB.w && player.x + HB.x + HB.w > e.x + E_HB.x &&
+        player.y + HB.y < e.y + E_HB.y + E_HB.h && player.y + HB.y + HB.h > e.y + E_HB.y) {
+      damagePlayer((player.x + 8) - (e.x + 8), (player.y + 8) - (e.y + 8));
+    }
+  }
+
+  /* thornspitters */
+  for (const s of spitters) if (s.hp > 0) updateSpitter(s, dt);
+
+  /* thorns in flight */
+  for (let i = thorns.length - 1; i >= 0; i--) {
+    const t = thorns[i];
+    t.age += dt; t.life -= dt;
+    if (t.life <= 0) { thorns.splice(i, 1); continue; }
+    t.x += t.vx * dt;
+    t.y += t.vy * dt;
+
+    if (t.refl) {
+      /* a reflected thorn is YOUR weapon now */
+      let spent = false;
+      for (const e of enemies) {
+        if (e.hp <= 0) continue;
+        if (t.x > e.x + 2 && t.x < e.x + 14 && t.y > e.y + 3 && t.y < e.y + 15) {
+          hitEnemy(e);
+          spent = true;
+          break;
+        }
+      }
+      if (!spent) for (const s of spitters) {
+        if (s.hp <= 0) continue;
+        const sx = s.tx * TILE, sy = s.ty * TILE;
+        if (t.x > sx && t.x < sx + 16 && t.y > sy - 12 && t.y < sy + 16) {
+          killSpitter(s);                     // pierces the bush, duck or not
+          spent = true;
+          break;
+        }
+      }
+      if (spent) { thorns.splice(i, 1); continue; }
+    } else if (player.invulnT <= 0 &&
+        t.x > player.x + HB.x && t.x < player.x + HB.x + HB.w &&
+        t.y > player.y + HB.y - 4 && t.y < player.y + HB.y + HB.h) {
+      damagePlayer(t.vx, t.vy);
+      thorns.splice(i, 1);
+      continue;
+    }
+
+    /* world collision (after a short spawn grace so it clears its own bush):
+       trees and rocks stop thorns; bushes get shredded as they pass */
+    if (t.age > 0.12) {
+      const ttx = Math.floor(t.x / TILE), tty = Math.floor(t.y / TILE);
+      const c = tileAt(ttx, tty);
+      if (c === "T" || c === "R" || c === "D" || c === "M") {
+        for (let j = 0; j < 4; j++)
+          particles.push({
+            x: t.x, y: t.y,
+            vx: (Math.random() - 0.5) * 50, vy: -Math.random() * 40,
+            life: 0.25, color: "#8a6430",
+          });
+        thorns.splice(i, 1);
+        continue;
+      }
+      if (c === "B") bushHit(ttx, tty);       // shreds cover / wakes mimics
+    }
+  }
+
+  /* arrows in flight */
+  for (let i = arrows.length - 1; i >= 0; i--) {
+    const a = arrows[i];
+    a.life -= dt;
+    if (a.life <= 0) { SFX.thunk(volAt(a.x, a.y) * 0.5); arrows.splice(i, 1); continue; }
+    a.x += a.vx * dt;
+    a.y += a.vy * dt;
+
+    /* snortlings — an unaware target takes a clean double hit */
+    let spent = false;
+    for (const e of enemies) {
+      if (e.hp <= 0) continue;
+      if (a.x > e.x + 2 && a.x < e.x + 14 && a.y > e.y + 3 && a.y < e.y + 15) {
+        if (e.state === "patrol" || e.state === "confused") {
+          e.hp--;                       // the sneak-shot bonus
+          sparkle(a.x, a.y);
+        }
+        hitEnemy(e, a.x, a.y);
+        spent = true;
+        break;
+      }
+    }
+    if (!spent) for (const s of spitters) {
+      if (s.hp <= 0) continue;
+      const sx = s.tx * TILE, sy = s.ty * TILE;
+      if (a.x > sx && a.x < sx + 16 && a.y > sy - 12 && a.y < sy + 16) {
+        if (s.riseH >= 6 && s.invulnT <= 0) {        // pod is up: real damage
+          s.hp--;
+          s.flashT = 0.15;
+          s.invulnT = 0.4;
+          sparkle(a.x, a.y);
+          SFX.hit();
+          if (s.hp <= 0) killSpitter(s);
+        } else if (s.state === "dormant") {          // shot its disguise
+          revealSpitter(s);
+        } else {                                     // ducked: armored
+          SFX.thunk(volAt(a.x, a.y));
+        }
+        spent = true;
+        break;
+      }
+    }
+    if (spent) { arrows.splice(i, 1); continue; }
+
+    /* terrain: trees and rocks stop arrows; bushes get cut through */
+    const atx = Math.floor(a.x / TILE), aty = Math.floor(a.y / TILE);
+    const c = tileAt(atx, aty);
+    if (c === "T" || c === "R" || c === "D" || c === "M") {
+      for (let j = 0; j < 4; j++)
+        particles.push({
+          x: a.x, y: a.y,
+          vx: (Math.random() - 0.5) * 50, vy: -Math.random() * 40,
+          life: 0.25, color: "#8a5a28",
+        });
+      SFX.thunk(volAt(a.x, a.y));
+      arrows.splice(i, 1);
+      continue;
+    }
+    if (c === "B") bushHit(atx, aty);
+  }
+
+  /* clear the fallen */
+  for (let i = enemies.length - 1; i >= 0; i--)
+    if (enemies[i].hp <= 0) enemies.splice(i, 1);
+  for (let i = spitters.length - 1; i >= 0; i--)
+    if (spitters[i].hp <= 0) spitters.splice(i, 1);
+
+  /* ember shards */
+  for (const sh of shardItems) {
+    if (sh.taken) continue;
+    const cx = sh.tx * TILE + 8, cy = sh.ty * TILE + 8;
+    if (Math.random() < dt * 1.5)               // embers drift off the shard
+      particles.push({
+        x: cx + (Math.random() * 8 - 4), y: cy + 2,
+        vx: (Math.random() - 0.5) * 8, vy: -14 - Math.random() * 10,
+        life: 0.7 + Math.random() * 0.4, color: "#ff8c3a",
+      });
+    if (Math.hypot(cx - (player.x + 8), cy - (player.y + 8)) < 10) {
+      sh.taken = true;
+      shardCount++;
+      sparkle(cx, cy); sparkle(cx, cy - 4);
+      SFX.shard();
+      if (shardCount >= 3) {
+        for (let y = 0; y < MAP_H; y++)
+          for (let x = 0; x < MAP_W; x++)
+            if (map[y][x] === "D") map[y][x] = "G";
+        sparkle(11.5 * TILE + 8, TILE + 8);
+        SFX.door();
+        shake = Math.max(shake, 2);
+        showBanner("THE SHRINE OPENS!");
+      } else {
+        showBanner(`EMBER SHARD  ${shardCount}/3`);
+      }
+    }
+  }
+
+  /* bumping the sealed door */
+  if (shardCount < 3 && sealedCool <= 0 &&
+      Math.hypot(12 * TILE - (player.x + 8), 1.5 * TILE - (player.y + 8)) < 26) {
+    sealedCool = 3;
+    SFX.sealed();
+    showBanner("SEALED BY THREE EMBER SHARDS");
+  }
+
+  /* stepping through the open gate wins the chapter */
+  if (tileAt(Math.floor((player.x + 8) / TILE), Math.floor((player.y + 8) / TILE)) === "G") {
+    gameWon = true;
+    SFX.win();
+    return;
+  }
+
+  /* heart drops */
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const dr = drops[i];
+    dr.life -= dt;
+    if (dr.life <= 0) { drops.splice(i, 1); continue; }
+    if (Math.hypot(dr.x + 4 - (player.x + 8), dr.y + 3 - (player.y + 8)) < 10) {
+      if (dr.type === "arrow") {
+        player.ammo = Math.min(MAX_ARROWS, player.ammo + 2);
+        SFX.pickup();
+      } else {
+        player.hp = Math.min(MAX_HP, player.hp + 1);
+        SFX.heart();
+      }
+      sparkle(dr.x + 4, dr.y + 3);
+      drops.splice(i, 1);
+    }
+  }
+
+  /* particles */
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 90 * dt;
+  }
+}
+
+/* ----------------------------------------------------------
+   TILE RENDERING
+---------------------------------------------------------- */
+function drawGrassBase(x, y, h) {
+  ctx.fillStyle = h < 0.5 ? "#5aab47" : "#549f42";
+  ctx.fillRect(x, y, TILE, TILE);
+  ctx.fillStyle = "#4c8a3c";
+  ctx.fillRect(x + ((h * 13) | 0) % 12 + 2, y + ((h * 7) | 0) % 12 + 2, 1, 2);
+  ctx.fillRect(x + ((h * 29) | 0) % 13 + 1, y + ((h * 31) | 0) % 11 + 3, 1, 2);
+  ctx.fillStyle = "#79c465";
+  ctx.fillRect(x + ((h * 53) | 0) % 12 + 2, y + ((h * 17) | 0) % 12 + 1, 1, 1);
+}
+
+function drawTile(tx, ty, t, time) {
+  const x = tx * TILE, y = ty * TILE;
+  const h = hash(tx, ty);
+
+  switch (t) {
+    case ".": drawGrassBase(x, y, h); break;
+
+    case "F": {
+      drawGrassBase(x, y, h);
+      const fx = x + 3 + ((h * 37) | 0) % 6, fy = y + 3 + ((h * 19) | 0) % 6;
+      const petal = h < 0.5 ? "#f2f2f2" : "#f08bb4";
+      ctx.fillStyle = petal;
+      ctx.fillRect(fx - 1, fy, 3, 1); ctx.fillRect(fx, fy - 1, 1, 3);
+      ctx.fillStyle = "#f2c14e"; ctx.fillRect(fx, fy, 1, 1);
+      if (h > 0.4) {
+        ctx.fillStyle = petal;
+        ctx.fillRect(fx + 5, fy + 5, 1, 1); ctx.fillRect(fx + 7, fy + 4, 1, 1);
+      }
+      break;
+    }
+
+    case "S": {
+      ctx.fillStyle = "#d8c07a";
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = "#c4a763";
+      ctx.fillRect(x + ((h * 23) | 0) % 13 + 1, y + ((h * 41) | 0) % 13 + 1, 2, 1);
+      ctx.fillRect(x + ((h * 47) | 0) % 12 + 2, y + ((h * 13) | 0) % 12 + 3, 1, 1);
+      ctx.fillStyle = "#e6d294";
+      ctx.fillRect(x + ((h * 61) | 0) % 12 + 2, y + ((h * 53) | 0) % 12 + 2, 1, 1);
+      break;
+    }
+
+    case "W": {
+      ctx.fillStyle = "#2a6db5";
+      ctx.fillRect(x, y, TILE, TILE);
+      // drifting wave glints
+      const ph = ((time * 1.4 + h * 6.28) % 6.28);
+      ctx.fillStyle = "#3b86cf";
+      const wy = y + 3 + (((Math.sin(ph) + 1) * 4) | 0);
+      ctx.fillRect(x + 2 + ((h * 31) | 0) % 6, wy, 5, 1);
+      ctx.fillRect(x + 8 - ((h * 17) | 0) % 5, (wy + 7 > y + 14 ? y + 2 : wy + 7), 4, 1);
+      // foam where the water meets land
+      ctx.fillStyle = "#bfe3f2";
+      if (tileAt(tx, ty - 1) !== "W" && tileAt(tx, ty - 1) !== "=") ctx.fillRect(x, y, TILE, 2);
+      if (tileAt(tx, ty + 1) !== "W" && tileAt(tx, ty + 1) !== "=") ctx.fillRect(x, y + 14, TILE, 2);
+      if (tileAt(tx - 1, ty) !== "W" && tileAt(tx - 1, ty) !== "=") ctx.fillRect(x, y, 2, TILE);
+      if (tileAt(tx + 1, ty) !== "W" && tileAt(tx + 1, ty) !== "=") ctx.fillRect(x + 14, y, 2, TILE);
+      break;
+    }
+
+    case "=": {
+      ctx.fillStyle = "#a8743d";
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = "#7c5226";
+      for (let i = 0; i < 4; i++) ctx.fillRect(x, y + i * 4 + 3, TILE, 1);
+      ctx.fillStyle = "#c98f4f";
+      ctx.fillRect(x, y, TILE, 1);
+      // side rails
+      ctx.fillStyle = "#5e3d1c";
+      if (tileAt(tx - 1, ty) === "W") ctx.fillRect(x, y, 2, TILE);
+      if (tileAt(tx + 1, ty) === "W") ctx.fillRect(x + 14, y, 2, TILE);
+      break;
+    }
+
+    case "T": {
+      drawGrassBase(x, y, h);
+      ctx.fillStyle = "#6f4a23";                       // trunk
+      ctx.fillRect(x + 6, y + 11, 4, 5);
+      ctx.fillStyle = "#2e7d36";                       // canopy dark
+      ctx.fillRect(x + 1, y + 3, 14, 9);
+      ctx.fillRect(x + 3, y + 1, 10, 13);
+      ctx.fillStyle = "#3f9e46";                       // canopy mid
+      ctx.fillRect(x + 3, y + 3, 9, 7);
+      ctx.fillStyle = "#59b859";                       // highlight
+      ctx.fillRect(x + 4 + ((h * 11) | 0) % 3, y + 3, 4, 2);
+      ctx.fillRect(x + 3, y + 5, 2, 3);
+      break;
+    }
+
+    case "B": {
+      drawGrassBase(x, y, h);
+      ctx.fillStyle = "#1f4d24";
+      ctx.fillRect(x + 3, y + 6, 10, 8);
+      ctx.fillRect(x + 4, y + 4, 8, 11);
+      ctx.fillStyle = "#3f9e46";
+      ctx.fillRect(x + 4, y + 5, 8, 7);
+      ctx.fillStyle = "#59b859";
+      ctx.fillRect(x + 5, y + 5, 3, 2);
+      ctx.fillRect(x + 9, y + 7, 2, 2);
+      break;
+    }
+
+    case "R": {
+      drawGrassBase(x, y, h);
+      ctx.fillStyle = "#6e6e66";
+      ctx.fillRect(x + 3, y + 5, 11, 9);
+      ctx.fillStyle = "#9a9a92";
+      ctx.fillRect(x + 3, y + 4, 10, 8);
+      ctx.fillStyle = "#c0c0b6";
+      ctx.fillRect(x + 5, y + 5, 4, 2);
+      ctx.fillStyle = "#54544d";
+      ctx.fillRect(x + 4, y + 13, 9, 1);
+      break;
+    }
+
+    case "M": {            // shrine stonework
+      ctx.fillStyle = "#1a140c";
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = "#8a8a82";
+      ctx.fillRect(x + 1, y + 1, 14, 14);
+      ctx.fillStyle = "#6e6e66";
+      ctx.fillRect(x + 1, y + 11, 14, 4);
+      ctx.fillStyle = "#a8a89e";
+      ctx.fillRect(x + 2, y + 2, 5, 2);
+      ctx.fillStyle = "#4c8a3c";   // moss
+      ctx.fillRect(x + ((h * 11) | 0) % 10 + 2, y + ((h * 7) | 0) % 9 + 4, 2, 1);
+      break;
+    }
+
+    case "D": {            // the sealed door — sockets light per shard
+      ctx.fillStyle = "#6e6e66";
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = "#3a3a34";
+      ctx.fillRect(x + 1, y + 2, 14, 13);
+      ctx.fillStyle = "#23231f";   // carved arch
+      ctx.fillRect(x + 1, y + 2, 14, 2);
+      for (let i = 0; i < 3; i++) {
+        const sx = 11 * TILE + 5 + i * 8;          // absolute across the 2-tile door
+        if (sx < x || sx > x + TILE - 3) continue;
+        if (i < shardCount) {
+          const p = 0.6 + 0.4 * Math.sin(time * 4 + i);
+          ctx.fillStyle = `rgba(255,140,58,${p.toFixed(2)})`;
+          ctx.fillRect(sx, y + 8, 3, 3);
+          ctx.fillStyle = "#ffd24a";
+          ctx.fillRect(sx + 1, y + 9, 1, 1);
+        } else {
+          ctx.fillStyle = "#23231f";
+          ctx.fillRect(sx, y + 8, 3, 3);
+        }
+      }
+      break;
+    }
+
+    case "G": {            // the gate stands open, embers within
+      ctx.fillStyle = "#6e6e66";
+      ctx.fillRect(x, y, TILE, TILE);
+      ctx.fillStyle = "#0a0806";
+      ctx.fillRect(x + 1, y + 2, 14, 14);
+      const p = 0.5 + 0.5 * Math.sin(time * 3 + x);
+      ctx.fillStyle = `rgba(255,140,58,${(0.2 + 0.18 * p).toFixed(2)})`;
+      ctx.fillRect(x + 1, y + 11, 14, 5);
+      ctx.fillStyle = `rgba(255,210,90,${(0.3 + 0.3 * p).toFixed(2)})`;
+      ctx.fillRect(x + 4, y + 13, 1, 1);
+      ctx.fillRect(x + 9, y + 12, 1, 1);
+      ctx.fillRect(x + 12, y + 14, 1, 1);
+      break;
+    }
+  }
+}
+
+/* ----------------------------------------------------------
+   SWORD
+---------------------------------------------------------- */
+function drawSwing() {
+  const sw = swingState();
+  if (!sw) return;
+  const { pivot, angle, angleAt, len, sweep, s, t } = sw;
+
+  /* slash trail: a white streak chasing the blade, fading on follow-through */
+  if (sweep > 0.04) {
+    const fade = t < 0.62 ? 1 : Math.max(0, 1 - (t - 0.62) / 0.22);
+    if (fade > 0) {
+      const a0 = angleAt(Math.max(0, sweep - 0.55));
+      const a1 = angleAt(sweep);
+      ctx.lineCap = "butt";
+      ctx.strokeStyle = `rgba(255,255,255,${0.16 * fade})`;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(pivot.x, pivot.y, SWORD_LEN - 2, a0, a1, s < 0);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${0.4 * fade})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(pivot.x, pivot.y, SWORD_LEN + 1, a0, a1, s < 0);
+      ctx.stroke();
+    }
+  }
+
+  if (len < 2) return;
+  /* the blade itself: chunky 2x2 pixels laid along the swing angle so it
+     stays pixel-art at any rotation */
+  const dx = Math.cos(angle), dy = Math.sin(angle);
+  for (let r = 2; r <= 3 + len; r++) {
+    const x = Math.round(pivot.x + dx * r) - 1;
+    const y = Math.round(pivot.y + dy * r) - 1;
+    ctx.fillStyle = r <= 4 ? "#e8c14a" : r >= 2 + len ? "#ffffff" : "#d9e6ee";
+    ctx.fillRect(x, y, 2, 2);
+  }
+  /* crossguard */
+  ctx.fillStyle = "#c79a2e";
+  ctx.fillRect(Math.round(pivot.x + dx * 5 - dy * 2) - 1, Math.round(pivot.y + dy * 5 + dx * 2) - 1, 2, 2);
+  ctx.fillRect(Math.round(pivot.x + dx * 5 + dy * 2) - 1, Math.round(pivot.y + dy * 5 - dx * 2) - 1, 2, 2);
+}
+
+/* a flash of bow as the shot looses */
+function drawBow() {
+  const px = Math.round(player.x), py = Math.round(player.y);
+  ctx.fillStyle = "#8a5a28";
+  switch (player.facing) {
+    case "right":
+      ctx.fillRect(px + 13, py + 3, 2, 10);
+      ctx.fillRect(px + 12, py + 3, 1, 2); ctx.fillRect(px + 12, py + 11, 1, 2);
+      ctx.fillStyle = "#d8d8c8"; ctx.fillRect(px + 12, py + 5, 1, 6);
+      break;
+    case "left":
+      ctx.fillRect(px + 1, py + 3, 2, 10);
+      ctx.fillRect(px + 3, py + 3, 1, 2); ctx.fillRect(px + 3, py + 11, 1, 2);
+      ctx.fillStyle = "#d8d8c8"; ctx.fillRect(px + 3, py + 5, 1, 6);
+      break;
+    case "down":
+      ctx.fillRect(px + 3, py + 13, 10, 2);
+      ctx.fillRect(px + 3, py + 12, 2, 1); ctx.fillRect(px + 11, py + 12, 2, 1);
+      ctx.fillStyle = "#d8d8c8"; ctx.fillRect(px + 5, py + 12, 6, 1);
+      break;
+    case "up":
+      ctx.fillRect(px + 3, py + 1, 10, 2);
+      ctx.fillRect(px + 3, py + 3, 2, 1); ctx.fillRect(px + 11, py + 3, 2, 1);
+      ctx.fillStyle = "#d8d8c8"; ctx.fillRect(px + 5, py + 3, 6, 1);
+      break;
+  }
+}
+
+function drawFlightArrows() {
+  for (const a of arrows) {
+    const n = Math.hypot(a.vx, a.vy) || 1;
+    const dx = a.vx / n, dy = a.vy / n;
+    ctx.fillStyle = "#e8ecd8";          // fletching
+    ctx.fillRect(Math.round(a.x - dx * 4) - 1, Math.round(a.y - dy * 4) - 1, 2, 2);
+    ctx.fillStyle = "#8a5a28";          // shaft
+    ctx.fillRect(Math.round(a.x - dx) - 1, Math.round(a.y - dy) - 1, 2, 2);
+    ctx.fillRect(Math.round(a.x + dx) - 1, Math.round(a.y + dy) - 1, 2, 2);
+    ctx.fillStyle = "#e8c14a";          // tip
+    ctx.fillRect(Math.round(a.x + dx * 4) - 1, Math.round(a.y + dy * 4) - 1, 2, 2);
+  }
+}
+
+function drawMark(ch, color, ix, iy) {
+  ctx.fillStyle = "#1a140c";
+  ctx.fillText(ch, ix - 1, iy); ctx.fillText(ch, ix + 1, iy);
+  ctx.fillText(ch, ix, iy - 1); ctx.fillText(ch, ix, iy + 1);
+  ctx.fillStyle = color;
+  ctx.fillText(ch, ix, iy);
+}
+
+/* ----------------------------------------------------------
+   THORNSPITTER RENDERING
+   The map already draws its anchor tile as a bush; dormant we
+   only add the "tell" (berries + a rare blink), risen we draw
+   the stalk and pod over the bush base.
+---------------------------------------------------------- */
+function drawSpitter(s, time) {
+  const x = s.tx * TILE, y = s.ty * TILE;
+  const h = hash(s.tx, s.ty);
+
+  if (s.riseH < 1) {
+    /* the tell: two berries no real bush has... */
+    ctx.fillStyle = "#b14a6e";
+    ctx.fillRect(x + 6, y + 8, 1, 1);
+    ctx.fillRect(x + 10, y + 6, 1, 1);
+    /* ...and now and then, the leaves part and an eye looks around.
+       Lids open smoothly, hold, then snap shut; each mimic blinks
+       on its own rhythm so they never sync up. */
+    const period = 2.8 + h * 1.7;
+    const tt = (time + h * 9) % period;
+    const BLINK = 0.6;
+    if (tt < BLINK) {
+      const p = tt / BLINK;
+      const open = p < 0.2 ? p / 0.2 : p > 0.8 ? (1 - p) / 0.2 : 1;
+      const eh = Math.round(open * 2);          // eye height, 0..2 — just a peek
+      if (eh > 0) {
+        const top = y + 8 - Math.ceil(eh / 2);
+        /* a small gap in the foliage */
+        ctx.fillStyle = "#16381b";
+        ctx.fillRect(x + 6, top - 1, 4, eh + 2);
+        /* the eye */
+        ctx.fillStyle = "#e8ecd8";
+        ctx.fillRect(x + 7, top, 3, eh);
+        /* pupil sneaks a glance toward you */
+        const pdx = Math.max(-1, Math.min(1, Math.round((player.x + 8 - (x + 8)) / 20)));
+        ctx.fillStyle = "#1a140c";
+        ctx.fillRect(x + 8 + pdx, top, 1, eh);
+      }
+    }
+    return;
+  }
+
+  const rise = Math.round(s.riseH);
+  const hy = y + 4 - rise + (s.recoilT > 0 ? 2 : 0);   // pod kicks back on firing
+  const flare = s.recoilT > 0 || s.eyeGlow > 0.85;     // maw opens to spit
+
+  /* stalk with thorn nubs */
+  ctx.fillStyle = "#2c7034";
+  ctx.fillRect(x + 7, y + 6 - rise, 2, rise + 6);
+  ctx.fillStyle = "#1f4d24";
+  ctx.fillRect(x + 6, y + 9 - rise, 1, 1);
+  ctx.fillRect(x + 9, y + 12 - rise, 1, 1);
+
+  /* pod */
+  ctx.fillStyle = "#1a140c";
+  ctx.fillRect(x + 2, hy - 6, 12, 10);
+  ctx.fillStyle = s.flashT > 0 ? "#ffffff" : "#6fae3f";
+  ctx.fillRect(x + 3, hy - 5, 10, 8);
+  if (s.flashT <= 0) {
+    ctx.fillStyle = "#4d8030";
+    ctx.fillRect(x + 3, hy + 1, 10, 2);
+    /* magenta petals — flared wide when it's about to spit */
+    ctx.fillStyle = "#b14a6e";
+    if (flare) {
+      ctx.fillRect(x + 1, hy - 8, 2, 2);
+      ctx.fillRect(x + 7, hy - 9, 2, 3);
+      ctx.fillRect(x + 13, hy - 8, 2, 2);
+      ctx.fillStyle = "#5e1f33";              // open maw
+      ctx.fillRect(x + 6, hy, 4, 2);
+      ctx.fillStyle = "#b14a6e";
+    } else {
+      ctx.fillRect(x + 2, hy - 7, 2, 2);
+      ctx.fillRect(x + 7, hy - 8, 2, 3);
+      ctx.fillRect(x + 12, hy - 7, 2, 2);
+    }
+
+    /* the eye — white at rest, igniting as it aims */
+    let eyeCol = "#ffffff";
+    if (s.eyeGlow > 0.05) {
+      eyeCol = s.eyeGlow < 0.55 ? "#ffd24a"
+        : (Math.sin(time * 18) > 0 ? "#ff5b3a" : "#ffd24a");
+    }
+    ctx.fillStyle = eyeCol;
+    ctx.fillRect(x + 6, hy - 3, 4, 3);
+    /* pupil tracks the player */
+    const pdx = Math.max(-1, Math.min(1, Math.round(((player.x + 8) - (x + 8)) / 24)));
+    const pdy = Math.max(0, Math.min(1, Math.round(((player.y + 8) - hy) / 24)));
+    ctx.fillStyle = "#1a140c";
+    ctx.fillRect(x + 7 + pdx, hy - 3 + pdy, 1, 2);
+  }
+}
+
+function drawThorns() {
+  for (const t of thorns) {
+    const n = Math.hypot(t.vx, t.vy) || 1;
+    const dx = t.vx / n, dy = t.vy / n;
+    const tx = Math.round(t.x), ty = Math.round(t.y);
+    if (t.refl) {       // a deflected thorn gleams gold
+      ctx.fillStyle = "#e8c14a";
+      ctx.fillRect(Math.round(t.x - dx * 2) - 1, Math.round(t.y - dy * 2) - 1, 2, 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(tx - 1, ty - 1, 2, 2);
+    } else {
+      ctx.fillStyle = "#6b4a20";
+      ctx.fillRect(Math.round(t.x - dx * 2) - 1, Math.round(t.y - dy * 2) - 1, 2, 2);
+      ctx.fillStyle = "#a87838";
+      ctx.fillRect(tx - 1, ty - 1, 2, 2);
+      ctx.fillStyle = "#d8c07a";
+      ctx.fillRect(Math.round(t.x + dx * 2), Math.round(t.y + dy * 2), 1, 1);
+    }
+  }
+}
+
+/* ----------------------------------------------------------
+   DEBUG OVERLAY — vision cones & planned paths (toggle: V)
+---------------------------------------------------------- */
+
+/* run the enemy's own steering + collision 2s into the future */
+function simulatePath(e) {
+  const pts = [];
+  let x = e.x, y = e.y;
+  let vx = 0, vy = 0, target = null, speed = 0;
+  if (e.state === "patrol") { vx = e.vx; vy = e.vy; }
+  else if (e.state === "alert" || e.state === "windup") { target = [player.x, player.y]; speed = e.state === "windup" ? 170 : E_SPEED_CHASE; }
+  else if (e.state === "lunge") { vx = e.lvx; vy = e.lvy; }
+  else return pts;   // chase draws its actual A* route instead
+  if (!target && !vx && !vy) return pts;
+  const step = 1 / 30;
+  for (let i = 0; i < 60; i++) {
+    if (target) {
+      const dx = target[0] - x, dy = target[1] - y;
+      const d = Math.hypot(dx, dy);
+      if (d < 3) break;
+      vx = (dx / d) * speed; vy = (dy / d) * speed;
+    }
+    let moved = false;
+    if (vx && !boxCollides(x + vx * step, y, E_HB)) { x += vx * step; moved = true; }
+    if (vy && !boxCollides(x, y + vy * step, E_HB)) { y += vy * step; moved = true; }
+    if (!moved) break;
+    pts.push({ x: x + 8, y: y + 10 });
+  }
+  return pts;
+}
+
+function drawDebug() {
+  ctx.save();
+  ctx.lineWidth = 1;
+
+  for (const e of enemies) {
+    const ex = e.x + 8, ey = e.y + 8;
+    const aggro = e.state !== "patrol" && e.state !== "confused";
+    const col = aggro ? "255,91,58" : "255,210,74";
+
+    /* vision cone, occluded by the same tiles that block canSee() */
+    const base = Math.atan2(FV[e.facing][1], FV[e.facing][0]);
+    const RAYS = 22;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    for (let i = 0; i <= RAYS; i++) {
+      const a = base - 1.05 + (2.1 * i) / RAYS;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      let r = 4;
+      for (; r < VIEW_DIST; r += 3) {
+        const c = tileAt(((ex + ca * r) / TILE) | 0, ((ey + sa * r) / TILE) | 0);
+        if (c === "T" || c === "B" || c === "R" || c === "D" || c === "M") break;
+      }
+      ctx.lineTo(ex + ca * r, ey + sa * r);
+    }
+    ctx.closePath();
+    ctx.fillStyle = `rgba(${col},.10)`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${col},.35)`;
+    ctx.stroke();
+
+    /* hearing radius */
+    ctx.beginPath();
+    ctx.arc(ex, ey, HEAR_DIST, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,.18)";
+    ctx.stroke();
+
+    /* planned route: the real A* path while chasing (orange when the
+       goal is unreachable), simulated steering otherwise */
+    if ((e.state === "chase" || e.state === "return") && e.path) {
+      const pcol = e.state === "return" ? "120,200,255"
+        : e.pathReached ? col : "255,150,60";
+      ctx.fillStyle = `rgba(${pcol},.85)`;
+      let pxl = ex, pyl = ey;
+      const nodes = e.path.slice(e.pathI).map(wp => [wp.x * TILE + 8, wp.y * TILE + 8]);
+      if (e.state === "chase" && e.pathReached) nodes.push([e.lastX, e.lastY]);
+      for (const [nx, ny] of nodes) {
+        const steps = Math.max(1, (Math.hypot(nx - pxl, ny - pyl) / 5) | 0);
+        for (let k = 1; k <= steps; k++)
+          ctx.fillRect(Math.round(pxl + (nx - pxl) * k / steps),
+                       Math.round(pyl + (ny - pyl) * k / steps), 1, 1);
+        pxl = nx; pyl = ny;
+      }
+      ctx.fillRect(Math.round(pxl) - 2, Math.round(pyl), 5, 1);
+      ctx.fillRect(Math.round(pxl), Math.round(pyl) - 2, 1, 5);
+    } else {
+      const pts = simulatePath(e);
+      ctx.fillStyle = `rgba(${col},.85)`;
+      for (let i = 0; i < pts.length; i += 3)
+        ctx.fillRect(Math.round(pts[i].x), Math.round(pts[i].y), 1, 1);
+      if (pts.length) {
+        const p = pts[pts.length - 1];
+        ctx.fillRect(Math.round(p.x) - 2, Math.round(p.y), 5, 1);
+        ctx.fillRect(Math.round(p.x), Math.round(p.y) - 2, 1, 5);
+      }
+    }
+
+    /* X marks the spot it last saw you */
+    if (e.state === "chase") {
+      ctx.strokeStyle = "rgba(255,91,58,.8)";
+      ctx.beginPath();
+      ctx.moveTo(e.lastX - 3, e.lastY - 3); ctx.lineTo(e.lastX + 3, e.lastY + 3);
+      ctx.moveTo(e.lastX + 3, e.lastY - 3); ctx.lineTo(e.lastX - 3, e.lastY + 3);
+      ctx.stroke();
+    }
+  }
+
+  /* thornspitters: trigger radius while hidden, firing range while up */
+  ctx.setLineDash([3, 3]);
+  for (const s of spitters) {
+    const cx = s.tx * TILE + 8, cy = s.ty * TILE + 8;
+    const active = s.riseH >= 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, active ? SPIT_RANGE : REVEAL_DIST, 0, Math.PI * 2);
+    ctx.strokeStyle = active ? "rgba(255,91,58,.4)" : "rgba(177,74,110,.5)";
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+/* ----------------------------------------------------------
+   RENDER
+---------------------------------------------------------- */
+function render(time) {
+  /* camera follows the player, clamped to map bounds */
+  let camX = Math.round(Math.min(Math.max(player.x + 8 - VIEW_W / 2, 0), MAP_W * TILE - VIEW_W));
+  let camY = Math.round(Math.min(Math.max(player.y + 8 - VIEW_H / 2, 0), MAP_H * TILE - VIEW_H));
+  if (shake > 0.3) {
+    camX += Math.round((Math.random() * 2 - 1) * shake);
+    camY += Math.round((Math.random() * 2 - 1) * shake);
+  }
+
+  ctx.save();
+  ctx.translate(-camX, -camY);
+
+  /* visible tiles only — clamped on BOTH sides, since camera shake can
+     push the view a few px past the map edges */
+  const tx0 = Math.max(0, Math.floor(camX / TILE));
+  const ty0 = Math.max(0, Math.floor(camY / TILE));
+  const tx1 = Math.min(MAP_W - 1, Math.ceil((camX + VIEW_W) / TILE));
+  const ty1 = Math.min(MAP_H - 1, Math.ceil((camY + VIEW_H) / TILE));
+  for (let ty = ty0; ty <= ty1; ty++)
+    for (let tx = tx0; tx <= tx1; tx++)
+      drawTile(tx, ty, map[ty][tx], time);
+
+  /* drifting light motes for atmosphere */
+  for (const m of motes) {
+    const mx = m.x + Math.sin(time * 0.4 + m.p) * m.s;
+    const my = m.y + Math.cos(time * 0.3 + m.p * 1.7) * m.s * 0.6;
+    ctx.globalAlpha = 0.25 + 0.2 * Math.sin(time * 2 + m.p);
+    ctx.fillStyle = "#fff6cf";
+    ctx.fillRect(Math.round(mx), Math.round(my), 1, 1);
+  }
+  ctx.globalAlpha = 1;
+
+  /* drops, bobbing */
+  for (const dr of drops) {
+    if (dr.life < 2 && Math.floor(dr.life * 8) % 2 === 0) continue;  // expiring blink
+    const img = dr.type === "arrow" ? ARROW_ICON : HEART;
+    ctx.drawImage(img, Math.round(dr.x), Math.round(dr.y + Math.sin(time * 4 + dr.x) * 1.5));
+  }
+
+  /* ember shards — glowing, bobbing, impossible to miss */
+  for (const sh of shardItems) {
+    if (sh.taken) continue;
+    const cx = sh.tx * TILE + 8;
+    const cy = sh.ty * TILE + 8 + Math.sin(time * 3 + sh.tx) * 1.5;
+    const p = 0.5 + 0.5 * Math.sin(time * 4 + sh.tx * 2);
+    ctx.fillStyle = `rgba(255,140,58,${(0.1 + 0.08 * p).toFixed(2)})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ff8c3a";
+    ctx.fillRect(cx - 1, cy - 3, 2, 6);
+    ctx.fillRect(cx - 2, cy - 2, 4, 4);
+    ctx.fillRect(cx - 3, cy - 1, 6, 2);
+    ctx.fillStyle = "#ffd24a";
+    ctx.fillRect(cx - 1, cy - 2, 2, 3);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(cx - 1, cy - 2, 1, 1);
+  }
+
+  /* thornspitters (over their bush tiles) */
+  for (const s of spitters) drawSpitter(s, time);
+
+  /* enemies — squash on wind-up, stretch along the lunge */
+  for (const e of enemies) {
+    const ex = Math.round(e.x), ey = Math.round(e.y);
+    ctx.fillStyle = "rgba(0,0,0,.25)";
+    ctx.fillRect(ex + 3, ey + 14, 10, 2);
+    const sheet = e.flashT > 0 ? EFLASH : ESPR;
+    let dx2 = ex, dy2 = ey, dw = 16, dh = 16;
+    if (e.state === "windup") {                 // crouch + tremble
+      dh = 14; dy2 = ey + 2;
+      dx2 = ex + (Math.sin(time * 45) > 0 ? 1 : -1);
+    } else if (e.state === "lunge") {           // stretch into the dash
+      if (e.facing === "left" || e.facing === "right") { dw = 18; dx2 = ex - 1; }
+      else { dh = 18; dy2 = ey - 1; }
+    }
+    ctx.drawImage(sheet[e.facing][e.frame], dx2, dy2, dw, dh);
+    /* bared teeth while attacking */
+    if (e.state === "windup" || e.state === "lunge") {
+      ctx.fillStyle = "#ffffff";
+      if (e.facing === "down") {
+        ctx.fillRect(ex + 6, ey + 9, 1, 2); ctx.fillRect(ex + 9, ey + 9, 1, 2);
+      } else if (e.facing === "left") {
+        ctx.fillRect(ex + 1, ey + 10, 1, 2); ctx.fillRect(ex + 3, ey + 10, 1, 2);
+      } else if (e.facing === "right") {
+        ctx.fillRect(ex + 12, ey + 10, 1, 2); ctx.fillRect(ex + 14, ey + 10, 1, 2);
+      }
+    }
+  }
+
+  /* player shadow */
+  const px = Math.round(player.x), py = Math.round(player.y);
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.fillRect(px + 3, py + 14, 10, 2);
+
+  /* a 1px lunge into the slash gives the swing body weight */
+  const sw = swingState();
+  const lunge = sw && sw.sweep > 0.15 && sw.t < 0.85 ? 1 : 0;
+  const lx = px + (player.facing === "right" ? lunge : player.facing === "left" ? -lunge : 0);
+  const ly = py + (player.facing === "down" ? lunge : player.facing === "up" ? -lunge : 0);
+
+  /* pose: attack > walking > standing; stride frames bob the body 1px */
+  let pose = "stand";
+  if (player.attackT > 0) pose = "atk";
+  else if (player.moving) pose = WALK_SEQ[player.walkStep];
+  const bob = pose === "a" || pose === "b" ? -1 : 0;
+
+  /* sword renders behind the player when slashing upward;
+     the sprite blinks during i-frames */
+  const blink = player.invulnT > 0 && !gameOver && Math.floor(time * 14) % 2 === 0;
+  if (sw && player.facing === "up") drawSwing();
+  if (player.bowT > 0 && player.facing === "up") drawBow();
+  if (!blink) {
+    ctx.drawImage(SPR[player.facing][pose], lx, ly + bob);
+    /* idle blink: standing still, eyes close for a beat every few seconds */
+    if (!player.moving && player.attackT <= 0 && player.bowT <= 0 && time % 3.7 < 0.12) {
+      ctx.fillStyle = "#f2c890";
+      if (player.facing === "down") {
+        ctx.fillRect(lx + 6, ly + 6, 1, 1);
+        ctx.fillRect(lx + 9, ly + 6, 1, 1);
+      } else if (player.facing === "left") {
+        ctx.fillRect(lx + 4, ly + 6, 1, 1);
+      } else if (player.facing === "right") {
+        ctx.fillRect(lx + 11, ly + 6, 1, 1);
+      }
+    }
+  }
+  if (sw && player.facing !== "up") drawSwing();
+  if (player.bowT > 0 && player.facing !== "up") drawBow();
+
+  /* "!" and "?" indicators float above enemy heads */
+  ctx.font = "8px 'Press Start 2P', monospace";
+  ctx.textBaseline = "top";
+  for (const e of enemies) {
+    let ch = null, color = "#ffffff", oy = 0;
+    if (e.state === "alert" || (e.state === "chase" && e.alertT > -0.3)) {
+      ch = "!"; color = "#ffd24a";
+      const p = Math.min(1, (ALERT_TIME - e.alertT) / 0.18);     // pop on appear
+      oy = -3 * p + (1 - p) * 4;
+    } else if (e.state === "confused") {
+      ch = "?"; color = "#cfd8e8";
+      oy = Math.sin(time * 6) * 1.5;
+    }
+    if (!ch) continue;
+    drawMark(ch, color, Math.round(e.x) + 5, Math.round(e.y) - 11 + oy);
+  }
+  for (const s of spitters) {
+    if (s.revealAge < 0.8) {
+      const p = Math.min(1, s.revealAge / 0.18);
+      drawMark("!", "#ffd24a", s.tx * TILE + 5, s.ty * TILE - 19 - 3 * p + (1 - p) * 4);
+    }
+  }
+
+  /* projectiles fly over everything */
+  drawThorns();
+  drawFlightArrows();
+
+  /* particles */
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.life * 3);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(Math.round(p.x), Math.round(p.y), 2, 2);
+  }
+  ctx.globalAlpha = 1;
+
+  if (debugView) drawDebug();
+
+  ctx.restore();
+
+  /* red sting when the player takes a hit */
+  if (hurtFlash > 0) {
+    ctx.fillStyle = `rgba(224,60,50,${(0.3 * hurtFlash).toFixed(3)})`;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  }
+
+  /* ---- HUD ---- */
+  ctx.fillStyle = "rgba(10,12,8,.72)";
+  ctx.fillRect(0, 0, VIEW_W, 18);
+  ctx.fillStyle = "#e05252";
+  ctx.font = "8px 'Press Start 2P', monospace";
+  ctx.textBaseline = "top";
+  ctx.fillText("LIFE", 6, 6);
+  for (let i = 0; i < MAX_HP; i++)
+    ctx.drawImage(i < player.hp ? HEART : HEART_EMPTY, 46 + i * 10, 5);
+  /* the quiver */
+  ctx.drawImage(ARROW_ICON, 0, 0, 8, 8, 84, 5, 8, 8);
+  ctx.fillStyle = player.ammo > 0 ? "#d8c07a" : "#6a7560";
+  ctx.fillText(String(player.ammo), 95, 6);
+  /* shard pips */
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i < shardCount ? "#ff8c3a" : "#3a3f35";
+    ctx.fillRect(116 + i * 8, 8, 2, 4);
+    ctx.fillRect(115 + i * 8, 9, 4, 2);
+    if (i < shardCount) {
+      ctx.fillStyle = "#ffd24a";
+      ctx.fillRect(116 + i * 8, 9, 1, 1);
+    }
+  }
+  ctx.fillStyle = "#e8c14a";
+  const loc = "EMBERWOOD GLADE";
+  ctx.fillText(loc, VIEW_W - 6 - loc.length * 8, 6);
+  if (muted) {
+    ctx.fillStyle = "#6a7560";
+    ctx.fillText("MUTE", 146, 6);
+  }
+
+  /* quest banner */
+  if (bannerT > 0 && !gameWon) {
+    ctx.font = "8px 'Press Start 2P', monospace";
+    ctx.globalAlpha = Math.min(1, bannerT / 0.5);
+    const bw = bannerText.length * 8;
+    drawMark(bannerText, "#ffd24a", (VIEW_W - bw) / 2, 26);
+    ctx.globalAlpha = 1;
+  }
+
+  /* ---- victory ---- */
+  if (gameWon) {
+    ctx.fillStyle = "rgba(8,6,4,.78)";
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.font = "16px 'Press Start 2P', monospace";
+    ctx.fillStyle = "#ffd24a";
+    let msg = "CHAPTER I";
+    ctx.fillText(msg, (VIEW_W - ctx.measureText(msg).width) / 2, 66);
+    msg = "COMPLETE";
+    ctx.fillText(msg, (VIEW_W - ctx.measureText(msg).width) / 2, 86);
+    ctx.font = "8px 'Press Start 2P', monospace";
+    ctx.fillStyle = "#c9d6b8";
+    const mins = (stats.time / 60) | 0;
+    const secs = String((stats.time % 60) | 0).padStart(2, "0");
+    const lines = [
+      `TIME        ${mins}:${secs}`,
+      `FOES FELLED ${stats.kills}`,
+      `TIMES SEEN  ${stats.spotted}`,
+    ];
+    lines.forEach((ln, i) =>
+      ctx.fillText(ln, (VIEW_W - ln.length * 8) / 2, 116 + i * 14));
+    if (stats.spotted === 0) {
+      ctx.fillStyle = "#7fd4c1";
+      msg = "SHADOW OF THE GLADE";
+      ctx.fillText(msg, (VIEW_W - msg.length * 8) / 2, 162);
+    }
+    if (Math.floor(time * 2) % 2 === 0) {
+      ctx.fillStyle = "#e8c14a";
+      msg = "PRESS ENTER";
+      ctx.fillText(msg, (VIEW_W - msg.length * 8) / 2, 184);
+    }
+    return;
+  }
+
+  /* ---- game over ---- */
+  if (gameOver) {
+    ctx.fillStyle = "rgba(8,6,4,.7)";
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.font = "16px 'Press Start 2P', monospace";
+    ctx.fillStyle = "#e05252";
+    let msg = "GAME OVER";
+    ctx.fillText(msg, (VIEW_W - ctx.measureText(msg).width) / 2, 100);
+    if (Math.floor(time * 2) % 2 === 0) {
+      ctx.font = "8px 'Press Start 2P', monospace";
+      ctx.fillStyle = "#e8c14a";
+      msg = "PRESS ENTER";
+      ctx.fillText(msg, (VIEW_W - ctx.measureText(msg).width) / 2, 130);
+    }
+  }
+}
+
+function reset() {
+  player.x = 11 * TILE + 4;
+  player.y = 20 * TILE;
+  player.hp = MAX_HP;
+  player.invulnT = 1.2;
+  player.kx = player.ky = 0;
+  player.attackT = 0;
+  player.facing = "down";
+  player.ammo = 5;
+  player.bowT = 0;
+  arrows.length = 0;
+  enemies.length = 0;
+  ENEMY_SPAWNS.forEach(s => enemies.push(makeEnemy(s)));
+  spitters.length = 0;
+  SPITTER_SPAWNS.forEach(s => spitters.push(makeSpitter(s)));
+  buildWorld();                       // fresh map, disguises, sealed shrine
+  shardItems.forEach(sh => { sh.taken = false; });
+  shardCount = 0;
+  stats.time = 0; stats.kills = 0; stats.spotted = 0;
+  bannerText = ""; bannerT = 0; sealedCool = 0;
+  thorns.length = 0;
+  drops.length = 0;
+  particles.length = 0;
+  gameOver = false;
+  gameWon = false;
+}
+
+/* ----------------------------------------------------------
+   MAIN LOOP
+---------------------------------------------------------- */
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  if (hitstop > 0) hitstop -= dt;     // freeze-frame: world holds, render continues
+  else update(dt);
+  render(now / 1000);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
