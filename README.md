@@ -4,7 +4,9 @@ Playing around with Anthropic's new Fable 5 to build **"Emberwood"**, a Zelda-li
 
 ## Play
 
-Open `index.html` in a browser. That's it: the entire game (engine, art, audio, AI) lives in that one file.
+**[▶ Play it in your browser](https://karamvirr.github.io/fable5-canvas-game/)**
+
+Or open `index.html` locally. That's it: the entire game (engine, art, audio, AI) lives in that one file.
 
 ## Controls
 
