@@ -10,6 +10,10 @@ Playing around with Anthropic's new Fable 5 to build **"Emberwood"**, a Zelda-li
 
 <img width="887" height="660" alt="Screenshot 2026-06-10 at 9 45 47 AM" src="https://github.com/user-attachments/assets/358e26b0-dab2-4f50-9e0c-e40ee48f42f4" />
 
+<img width="810" height="606" alt="Screenshot 2026-06-10 at 9 51 15 AM" src="https://github.com/user-attachments/assets/eaf33b53-fb4d-40db-ab6b-9aaa55edf457" />
+
+<img width="810" height="605" alt="Screenshot 2026-06-10 at 9 51 41 AM" src="https://github.com/user-attachments/assets/fde4f291-9bdc-40a4-b39b-d5facec2d8b4" />
+
 ## Play
 
 **[▶ Play it in your browser](https://karamvirr.github.io/fable5-canvas-game/)**
